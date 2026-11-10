@@ -61,7 +61,7 @@ export class Viewer {
     this.solid = null;
     this.stamp = null; // server setup fingerprint of the loaded solid
     this.settings = { field: "u", cmap: "turbo", thresh: 0.05,
-                      pointSize: 3, showSolid: true };
+                      pointSize: 3, showSolid: true, wake: false };
     this._raf = null;
     this._resize();
     new ResizeObserver(() => this._resize()).observe(container);
@@ -211,12 +211,34 @@ export class Viewer {
       mag[i] = v;
       if (v > vmax) vmax = v;
     }
+    // velocity: "hide fast flow" keeps only what the model slowed down, and
+    // recolors across the wake so its structure stands out; "fast" mode and
+    // density keep the original peak-relative thresholding. "fast" reference =
+    // the field's median speed: in a tunnel most cells ARE the undisturbed
+    // inflow, and snapshots are in physical units, so this self-calibrates.
+    const isVel = nc >= 3;
+    const wake = isVel && s.wake;
+    let uRef = vmax;
+    if (wake) {
+      const samp = [];
+      for (let i = 0; i < count; i += 7) samp.push(mag[i]);
+      samp.sort((a, b) => a - b);
+      uRef = samp[samp.length >> 1] || vmax;
+    }
+    const cut = wake ? Math.max(1e-9, s.thresh * uRef) : 0;
     for (let z = 0; z < nz; z++) {
       for (let y = 0; y < ny; y++) {
         for (let x = 0; x < nx; x++) {
           const i = (z * ny + y) * nx + x;
-          if (mag[i] <= s.thresh * vmax) continue;
-          const [r, g, b] = ramp(s.cmap, mag[i] / vmax);
+          let t; // colormap position 0..1
+          if (wake) {
+            if (mag[i] >= cut) continue;
+            t = mag[i] / cut;
+          } else {
+            if (mag[i] <= s.thresh * vmax) continue;
+            t = mag[i] / vmax;
+          }
+          const [r, g, b] = ramp(s.cmap, t);
           const p = this._pt(x, y, z, dim);
           pos[w * 3] = p[0]; pos[w * 3 + 1] = p[1]; pos[w * 3 + 2] = p[2];
           col[w * 3] = r; col[w * 3 + 1] = g; col[w * 3 + 2] = b;

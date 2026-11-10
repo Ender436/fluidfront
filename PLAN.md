@@ -287,5 +287,16 @@ testing work everywhere.
   in-browser: three kart cases with different rotations each render their own
   orientation, toggle on/off clean, 0 console errors. Also fixed case cards
   showing "undefined": WS status events have `case` but no `name` field.
+- **Wake view (hide fast flow)** — new "hide fast flow" checkbox on the results
+  viewer: velocity points faster than X% of the inflow vanish, leaving only
+  the flow the model slowed down (wake, recirculation, wall boundary layers),
+  recolored across the full colormap so wake structure pops. The "fast"
+  reference is the field's MEDIAN speed - key discovery: the engine's VTK
+  snapshots carry physical units (kart case: freestream ~12 m/s, not 0.1 LU),
+  so the median self-calibrates regardless of units; feeding u_lu=0.1 as the
+  reference had hidden 99.8% of the field. Slider label is now contextual:
+  "hide slow (<X%)" for velocity, "keep wake (<X% inflow)" in wake mode,
+  "hide calm" for density. Verified on full_kart: 205k points plain vs
+  1.8k/3.5k/6.5k at 30/60/90% wake cutoffs, toggle back restores fast mode.
 - **Next: M6** visualization polish; also verify the new flow on desktop 3090
   (bigger buffer cap -> higher tiers become usable there).

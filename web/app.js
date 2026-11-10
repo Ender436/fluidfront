@@ -295,12 +295,31 @@ $("btn-results").onclick = () => show("results");
 
 $("f-which").onchange = async () => {
   state.viewer?.setSettings({ field: $("f-which").value });
+  threshLabel();
   const snaps = (state.snapSel[state.current] || {})[$("f-which").value] || [];
   $("f-time").innerHTML = snaps.map(t => `<option value="${t}">${t}</option>`).reverse().join("");
   loadFrame();
 };
 $("f-cmap").onchange = () => state.viewer?.setSettings({ cmap: $("f-cmap").value });
-$("f-thresh").oninput = () => state.viewer?.setSettings({ thresh: $("f-thresh").value / 100 });
+$("f-thresh").oninput = () => {
+  state.viewer?.setSettings({ thresh: $("f-thresh").value / 100 });
+  threshLabel();
+};
+// wake mode: slider now means "% of incoming speed" - start somewhere useful
+$("f-wake").onchange = () => {
+  if ($("f-wake").checked && +$("f-thresh").value < 20) $("f-thresh").value = 60;
+  state.viewer?.setSettings({ wake: $("f-wake").checked,
+                              thresh: $("f-thresh").value / 100 });
+  threshLabel();
+};
+function threshLabel() {
+  const v = $("f-thresh").value;
+  $("thresh-lab").textContent =
+    $("f-which").value !== "u" ? `hide calm (<${v}%)`
+    : $("f-wake").checked ? `keep wake (<${v}% inflow)`
+    : `hide slow (<${v}%)`;
+}
+threshLabel();
 $("f-size").oninput = () => state.viewer?.setSettings({ pointSize: $("f-size").value });
 $("f-solid").onchange = async () => {
   const on = $("f-solid").checked;
