@@ -7,11 +7,20 @@ than a few voxels. Each finding gets a plain-language hint the wizard shows.
 
 from __future__ import annotations
 
+import numpy as np
 import trimesh
 
 # features thinner than this (voxels) get "will not survive voxelization" hints
 MIN_FEATURE_VOXELS_WARN = 4.0
 MIN_FEATURE_VOXELS_FAIL = 2.0
+
+
+def boundary_edge_count(mesh: trimesh.Trimesh) -> int:
+    """Edges shared by exactly one face (openings in the shell). Version-proof:
+    trimesh's private edge-count helpers move around between releases."""
+    pairs = np.sort(mesh.faces[:, [0, 1, 1, 2, 2, 0]], axis=1).reshape(-1, 2)
+    _, counts = np.unique(pairs, axis=0, return_counts=True)
+    return int((counts == 1).sum())
 
 
 def inspect_mesh(mesh: trimesh.Trimesh) -> dict:
@@ -22,7 +31,7 @@ def inspect_mesh(mesh: trimesh.Trimesh) -> dict:
         hints = []
         if hasattr(mesh, "is_winding_consistent") and not mesh.is_winding_consistent:
             hints.append("some faces point inwards (flipped normals)")
-        holes = int((mesh.edge_face_count == 1).sum())  # boundary edges
+        holes = boundary_edge_count(mesh)
         problems.append((
             "warn",
             "the model has open surfaces (not watertight)",

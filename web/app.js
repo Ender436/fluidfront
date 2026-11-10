@@ -143,6 +143,7 @@ function initForm() {
     fd.append("fluid", $("fluid").value);
     fd.append("rotation_deg", `${$("rx").value},${$("ry").value},${$("rz").value}`);
     fd.append("size_lu", $("size_lu").value || "0");
+    fd.append("model_units", $("model_units").value);
     fd.append("precision", $("precision").value);
     $("btn-create").disabled = true;
     $("btn-create").textContent = "Checking model…";
@@ -171,6 +172,7 @@ function showReport(res) {
   const rep = res.report, d = res.derived;
   facts($("rpt-facts"), [
     [`Re ≈ ${Math.round(d.re_si).toLocaleString()}`, "Reynolds number"],
+    [`${(+rep.length_si).toPrecision(3)} m`, "model length"],
     [fmtN(rep.cells), "cells"],
     [`${rep.domain.nx}×${rep.domain.ny}×${rep.domain.nz}`, "domain"],
     [rep.size_lu, "voxels on model"],

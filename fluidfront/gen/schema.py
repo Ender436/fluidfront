@@ -34,6 +34,8 @@ class CaseSpec:
     precision: str
     velocity_set: str
     subgrid: bool
+    subgrid_model: str
+    smagorinsky_const: float
     output_dir: Path
 
 
@@ -102,7 +104,17 @@ def load_case(case_dir: Path) -> CaseSpec:
         raise CaseError("d2q9 requires nz == 1")
     if nz == 1 and vsel != "d2q9":
         raise CaseError("nz == 1 (2D case) requires velocity_set d2q9")
+    subgrid_model = str(opts.get("subgrid_model", "smagorinsky")).lower()
+    if subgrid_model not in ("smagorinsky", "gbm"):
+        raise CaseError(f"options.subgrid_model {subgrid_model!r} not in ['smagorinsky', 'gbm']")
+    cs = float(opts.get("smagorinsky_const", 0.1))
+    if not 0.01 <= cs <= 0.5:
+        raise CaseError(f"options.smagorinsky_const {cs} out of sane range [0.01, 0.5]")
     subgrid = bool(opts.get("subgrid", derived.subgrid_suggested))
+    if derived.les_clamped and "subgrid" in opts and not opts["subgrid"]:
+        raise CaseError(
+            "this case sits at the solver's minimum viscosity (LES clamp): it "
+            "cannot run with the subgrid model turned off")
 
     run = raw["run"]
     force_every = int(run.get("force_every", 25))
@@ -124,5 +136,6 @@ def load_case(case_dir: Path) -> CaseSpec:
         name=name, case_dir=case_dir, raw=raw, derived=derived,
         nx=nx, ny=ny, nz=nz, geometry=geom, flow=flow, run=run,
         precision=precision, velocity_set=vsel, subgrid=subgrid,
+        subgrid_model=subgrid_model, smagorinsky_const=cs,
         output_dir=out,
     )

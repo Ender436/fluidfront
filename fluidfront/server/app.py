@@ -76,8 +76,13 @@ async def create_case(
     fluid: str = Form("air"),
     rotation_deg: str = Form("90,0,0"),      # STL Z-up -> tunnel +y default
     size_lu: int = Form(0),                  # >0 overrides quality tier
+    model_units: str = Form("m"),            # m | cm | mm | in (scale of the CAD file)
     precision: str = Form("fp16s"),
 ) -> dict:
+    scale_si = {"m": 1.0, "cm": 0.01, "mm": 0.001, "in": 0.0254}.get(model_units)
+    if scale_si is None:
+        raise HTTPException(status_code=422,
+                            detail=f"model_units {model_units!r} not in m/cm/mm/in")
     stem = Path(model.filename or "model").stem
     cname = _safe_name(name or stem)
     cdir = CASES / cname
@@ -93,15 +98,21 @@ async def create_case(
         rot = tuple(float(v) for v in rotation_deg.replace(";", ",").split(","))
         case, report = build_tunnel_case(
             upload, cdir, u_si=u_si, tier=tier, fluid=fluid, rotation_deg=rot,
-            size_lu=size_lu or None, max_cells=max_cells, precision=precision)
+            size_lu=size_lu or None, max_cells=max_cells,
+            scale_si=scale_si, precision=precision)
         (cdir / "case.json").write_text(json.dumps(case, indent=2))
         spec = load_case(cdir)  # guard rails fire here (tau, u_lu, ...)
     except (GeometryError, CaseError, ValueError) as e:
         shutil.rmtree(cdir, ignore_errors=True)
         raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:  # noqa: BLE001 - model files bring surprise formats
+        shutil.rmtree(cdir, ignore_errors=True)
+        raise HTTPException(status_code=422,
+                            detail=f"could not process this model: {type(e).__name__}: {e}")
 
     rep = {"warnings": report["warnings"], "stats": report["stats"],
            "blockage": report["blockage"],
+           "length_si": case["flow"]["length_si"],
            "domain": report["layout"].as_domain(),
            "size_lu": report["layout"].size_lu,
            "cells": report["layout"].nx * report["layout"].ny * report["layout"].nz,

@@ -1,9 +1,12 @@
 """SI <-> lattice-unit parameter computation and guard rails.
 
 This is the app's *trust layer*: every case gets its physical Reynolds
-number mapped exactly into lattice units (nu_lu = u_lu * size_lu / Re),
-and the resulting relaxation time / Mach number are checked so the UI
-can warn the user before a long run starts.
+number mapped into lattice units (nu_lu = u_lu * size_lu / Re). When the
+real viscosity is sharper than the model resolution can carry (tau would
+sink below the solver's stability floor), the app clamps to the lowest
+stable tau and runs Smagorinsky LES -- exactly what FluidX3D users do for
+real-world aero -- and reports the *effective* resolved Reynolds number
+honestly instead of pretending the mapping stayed exact.
 
 Mirrors FluidX3D v3.8 `units.set_m_kg_s()` conventions:
     unit_m  = si_x / x_lu
@@ -24,9 +27,9 @@ FLUIDS: dict[str, dict[str, float]] = {
 
 # Guard-rail limits (lattice units).
 TAU_SAFE_MIN = 0.545      # below this, plain SRT is under-resolved -> need LES
-TAU_HARD_MIN = 0.512      # below this, not even Smagorinsky LES stays stable -> refuse
+TAU_HARD_MIN = 0.515      # below this the solver goes unstable even with LES (measured on v3.8)
 TAU_SAFE_MAX = 1.9
-NU_LU_ABS_MIN = 1e-6      # hard floor (with subgrid LES)
+NU_LU_FLOOR = (TAU_HARD_MIN - 0.5) / 3.0  # lowest stable lattice viscosity (0.005)
 U_LU_WARN = 0.15          # Ma = u / (1/sqrt(3)); 0.15 -> Ma ~ 0.26
 U_LU_MAX = 0.3            # beyond this compressibility corrupts results
 U_LU_DEFAULT_TUNNEL = 0.1
@@ -50,6 +53,7 @@ class Derived:
     u_si: float | None
     warnings: list[str] = field(default_factory=list)
     subgrid_suggested: bool = False
+    les_clamped: bool = False   # true when Re exceeded what size_lu can resolve
 
 
 def fluid_properties(fluid: dict) -> tuple[float, float, str]:
@@ -91,34 +95,50 @@ def derive(case: dict) -> Derived:
         re_si = u_si * length_si / nu_si
         # exact Re similarity: nu_lu = u_lu * size_lu / Re
         nu_lu = u_lu * size_lu / re_si
-        re_lu = re_si
         unit_m = length_si / size_lu
         unit_s = u_lu / u_si * unit_m
         if abs(nu_lu * unit_m * unit_m / unit_s - nu_si) > 1e-9 * nu_si:
             raise CaseError("internal unit inconsistency")  # tripwire
 
     tau = 3.0 * nu_lu + 0.5
+
+    # --- LES clamp ----------------------------------------------------------
+    # At real-world speeds Re is far above what a hobby-sized mesh resolves:
+    # nu_lu underflows and tau sinks toward 0.5 (unstable). FluidX3D practice
+    # is to run at the lowest stable tau with Smagorinsky LES supplying the
+    # missing dissipation. We do that automatically and report the effective
+    # resolved Re. (Turning "quality up" alone barely helps: max resolvable
+    # Re grows only linearly with size_lu.)
+    les_clamped = False
+    if mode != "volume_force" and tau < TAU_HARD_MIN:
+        tau_exact = tau
+        nu_lu = NU_LU_FLOOR
+        tau = TAU_HARD_MIN
+        les_clamped = True
+
+    re_lu = u_lu * size_lu / nu_lu
     d = Derived(
         nu_lu=nu_lu, tau=tau, u_lu=u_lu, size_lu=size_lu, re_si=re_si,
         re_lu=re_lu, unit_m=unit_m, unit_s=unit_s, rho_si=rho_si, u_si=u_si,
+        les_clamped=les_clamped,
     )
 
     # ---- guard rails ----
-    if nu_lu < NU_LU_ABS_MIN:
-        raise CaseError(
-            f"nu_lu={nu_lu:.2e} too small even for LES: reduce speed or "
-            f"increase model resolution (cells-per-model: {size_lu:.0f})")
-    if tau < TAU_HARD_MIN:
-        raise CaseError(
-            f"flow at Re = {re_si:,.0f} cannot be simulated with only "
-            f"{size_lu:.0f} voxels across the model (viscosity underflows, "
-            f"tau = {tau:.4f}): pick a higher quality, or model a smaller / "
-            "slower object")
+    if les_clamped:
+        d.warnings.append(
+            f"Re = {re_si:,.0f} is too sharp for {size_lu:.0f} voxels across the "
+            f"model (air's viscosity underflows the solver: tau would be "
+            f"{tau_exact:.5f} < {TAU_HARD_MIN}). Running Smagorinsky LES at the "
+            f"lowest stable viscosity; the flow sees an effective Re ~ {re_lu:,.0f}. "
+            "Drag on blunt bodies stays a good match; boundary-layer detail does "
+            "not. To resolve more: larger model in the box, or test a lower speed."
+        )
     if tau < TAU_SAFE_MIN:
         d.subgrid_suggested = True
-        d.warnings.append(
-            f"relaxation time tau={tau:.4f} < {TAU_SAFE_MIN}: too close to "
-            "inviscid for plain SRT; enabling Smagorinsky LES (subgrid) model")
+        if not les_clamped:
+            d.warnings.append(
+                f"relaxation time tau={tau:.4f} < {TAU_SAFE_MIN}: too close to "
+                "inviscid for plain SRT; enabling Smagorinsky LES (subgrid) model")
     if tau > TAU_SAFE_MAX:
         d.warnings.append(
             f"tau={tau:.3f} very high (over-diffusive): model will look "
