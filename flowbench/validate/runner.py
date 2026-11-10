@@ -11,6 +11,8 @@ Cases (default):
                  Strouhal ~ 0.165 (Bark et al. 1999: Cd~1.37, St~0.164)
   poiseuille_3d  pressure-driven round pipe, exact parabolic profile:
                  L2 error < 5% (Krüger p.256: LBM typically 2-5%)
+  sphere3d_re100 STL model (generated sphere) voxelized on GPU, Re=100:
+                 Cd ~ 1.09 (Schiller-Naumann) within voxel/BC tolerance
 """
 
 from __future__ import annotations
@@ -57,6 +59,30 @@ POISEUILLE = {
 }
 
 CASES = [(CYL2D, "check_cyl2d"), (POISEUILLE, "check_poiseuille")]
+
+# --- M2: STL round-trip (trimesh -> binary STL -> GPU voxelizer) ----------
+SPHERE3D = {
+    "name": "sphere3d_re100",
+    "domain": {"nx": 192, "ny": 448, "nz": 192},
+    "geometry": {"kind": "stl", "path": "model.stl", "size_lu": 48,
+                 "center": [0.5, 0.3, 0.5], "rotation_deg": [0.0, 0.0, 0.0]},
+    "fluid": {"kind": "air"},
+    # 1 m sphere, Re=100 -> u = 100*nu/D = 1.516e-3 m/s
+    "flow": {"mode": "tunnel", "u_si": 1.516e-3, "length_si": 1.0, "u_lu": 0.1},
+    "options": {"velocity_set": "d3q19", "precision": "fp16s"},
+    "run": {"t_steps": 16000, "force_every": 25, "snapshot_every": 1000000},
+}
+CASES.append((SPHERE3D, "check_sphere3d"))
+
+
+def prepare_sphere3d(case_dir: Path) -> None:
+    """Build the STL model with the real geometry pipeline (M2 coverage):
+    trimesh sphere -> loaders cleanup -> binary STL on disk."""
+    from flowbench.geometry.loaders import export_binary_stl
+    import trimesh
+
+    mesh = trimesh.creation.icosphere(subdivisions=3, radius=0.5)  # 1 m dia
+    export_binary_stl(mesh, case_dir / "model.stl")
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +146,20 @@ def check_poiseuille(case_dir: Path, spec) -> tuple[bool, str]:
     return ok, f"parabolic-profile L2 error = {100 * err:.2f}% (want < 5%), t={snap['t']}"
 
 
+def check_sphere3d(case_dir: Path, spec) -> tuple[bool, str]:
+    data = read_forces(case_dir)
+    t, cd = data[:, 0], data[:, 4]
+    tail = slice(int(0.55 * len(t)), None)  # settled wake (last ~45%)
+    cd_mean = float(np.mean(cd[tail]))
+    cd_std = float(np.std(cd[tail]))
+    # Schiller-Naumann at Re=100: Cd = 24/Re (1 + 0.15 Re^0.687) ~= 1.08;
+    # allow for voxelization + equilibrium-BC blockage bias (~ +/- 15%)
+    ok = 0.95 <= cd_mean <= 1.25
+    return ok, (f"Cd = {cd_mean:.3f} +/- {cd_std:.3f} (want 0.95..1.25, "
+                f"ref 1.08), Re_lu = {spec.derived.re_lu:.1f}, "
+                f"projected-area-based")
+
+
 # ---------------------------------------------------------------------------
 
 def _event_printer(state: dict):
@@ -148,6 +188,9 @@ def main(argv=None) -> int:
         cdir = OUT / name
         cdir.mkdir(parents=True, exist_ok=True)
         (cdir / "case.json").write_text(json.dumps(case_dict, indent=2))
+        prepare = globals().get(f"prepare_{name}")
+        if prepare:
+            prepare(cdir)
         checker = globals()[checker_name]
         try:
             spec = load_case(cdir)

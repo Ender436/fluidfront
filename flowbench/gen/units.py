@@ -24,6 +24,7 @@ FLUIDS: dict[str, dict[str, float]] = {
 
 # Guard-rail limits (lattice units).
 TAU_SAFE_MIN = 0.545      # below this, plain SRT is under-resolved -> need LES
+TAU_HARD_MIN = 0.512      # below this, not even Smagorinsky LES stays stable -> refuse
 TAU_SAFE_MAX = 1.9
 NU_LU_ABS_MIN = 1e-6      # hard floor (with subgrid LES)
 U_LU_WARN = 0.15          # Ma = u / (1/sqrt(3)); 0.15 -> Ma ~ 0.26
@@ -107,6 +108,12 @@ def derive(case: dict) -> Derived:
         raise CaseError(
             f"nu_lu={nu_lu:.2e} too small even for LES: reduce speed or "
             f"increase model resolution (cells-per-model: {size_lu:.0f})")
+    if tau < TAU_HARD_MIN:
+        raise CaseError(
+            f"flow at Re = {re_si:,.0f} cannot be simulated with only "
+            f"{size_lu:.0f} voxels across the model (viscosity underflows, "
+            f"tau = {tau:.4f}): pick a higher quality, or model a smaller / "
+            "slower object")
     if tau < TAU_SAFE_MIN:
         d.subgrid_suggested = True
         d.warnings.append(
