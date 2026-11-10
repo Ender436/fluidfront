@@ -21,9 +21,11 @@ def build_tunnel_case(model_path: Path | str, case_dir: Path | str, *,
                       u_si: float, tier: str = "standard",
                       fluid: dict | str = "air",
                       rotation_deg=DEFAULT_ROTATION,
+                      size_lu: int | None = None,
                       max_cells: int | None = None,
                       precision: str = "fp16s") -> tuple[dict, dict]:
     """Returns (case_dict, report). Writes `<case_dir>/model.stl`.
+    size_lu: explicit voxels on the model's longest edge (overrides tier).
 
     report: {'warnings': [...], 'stats': {...}, 'layout': Layout}
     """
@@ -33,7 +35,7 @@ def build_tunnel_case(model_path: Path | str, case_dir: Path | str, *,
     insp = inspect_mesh(mesh)
     rot = tuple(float(v) for v in rotation_deg)
     bb = bbox_rotated(mesh, rot)
-    lay = fit_tunnel(bb["dims"], tier=tier, max_cells=max_cells)
+    lay = fit_tunnel(bb["dims"], tier=tier, size_lu=size_lu, max_cells=max_cells)
 
     stl_path = export_binary_stl(mesh, case_dir / "model.stl")
 

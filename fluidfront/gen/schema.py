@@ -109,6 +109,11 @@ def load_case(case_dir: Path) -> CaseSpec:
     snap_every = int(run.get("snapshot_every", max(5 * force_every, 100)))
     if snap_every % force_every:
         snap_every = ((snap_every // force_every) + 1) * force_every
+    # write normalized values back: the generator must use THESE, or snapshot
+    # times never align with the force-write loop (t is only ever a multiple
+    # of force_every) and no field snapshots get written at all
+    run["force_every"] = force_every
+    run["snapshot_every"] = snap_every
     if int(run.get("t_steps", 0)) < 1:
         raise CaseError("run.t_steps must be >= 1")
 

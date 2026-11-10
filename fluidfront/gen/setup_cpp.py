@@ -117,7 +117,7 @@ void main_setup() {
 }
 """
 
-SNAPSHOT_BLOCK = r"""        if(lbm.get_t() % DT_SNAP == 0ull) {
+SNAPSHOT_BLOCK = r"""        if(lbm.get_t() % DT_SNAP == 0ull || lbm.get_t() == T_MAX) { // incl. final frame
 @@RHO@@            lbm.u.write_device_to_vtk(OUT);
             double u_max = 0.0;
             parallel_for(lbm.get_N(), [&](ulong n) { u_max = fmax(u_max, (double)sqrt(sq(lbm.u.x[n]) + sq(lbm.u.y[n]) + sq(lbm.u.z[n]))); });

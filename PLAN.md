@@ -215,3 +215,19 @@ testing work everywhere.
   Makefile, docs all updated; validation re-run under the new name (green).
 - **Next: M4** app server (user chose to build the app skeleton before M3's
   solver-refinement presets, which will grow inside real usage).
+- **2026-11-10 — M4 skeleton done.** `fluidfront/server/`: FastAPI app +
+  `jobs.JobManager` (serial run queue on the shared engine build tree, worker
+  thread build->run, stop via cancel-event -> engine process terminate,
+  status.json persisted per case, WebSocket fan-out). Endpoints: device
+  budget (nvidia-smi -> max_cells), case create from model upload
+  (multipart -> geometry pipeline -> case.json + report.json; 422 carries the
+  human guard-rail text), list/detail/delete, run/stop, forces, snapshots,
+  downsampled field (base64 float32), `/ws` events. Smoke-tested end-to-end
+  on the laptop: upload sphere STL -> 96x192x96 Re=53 case -> run (live
+  progress on WS) -> forces + field fetch -> stop at 67% -> done.
+  Fixed along the way: `schema.load_case` now WRITES BACK normalized
+  force_every/snapshot_every (previously the alignment fix was computed but
+  unused -> snapshots never fired: `t % 1000` never hit a multiple of 18);
+  snapshots now also always fire at the final step. Runner got `cancel`
+  event support for stop.
+- **Next: M5** WebUI wizard/viewer against this API.

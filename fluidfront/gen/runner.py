@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -31,8 +32,11 @@ def parse_progress(line: str) -> dict | None:
             "step": int(step), "percent": int(pct), "eta": eta.strip()}
 
 
-def run_case(binary: Path, case_dir: Path, on_event: Callback | None = None) -> int:
-    """Blocking run of the engine for `case_dir`. Returns exit code."""
+def run_case(binary: Path, case_dir: Path, on_event: Callback | None = None,
+             cancel: threading.Event | None = None) -> int:
+    """Blocking run of the engine for `case_dir`. Returns exit code.
+    `cancel`: if a threading.Event is given and set, the engine process is
+    terminated (case stop button)."""
     binary, case_dir = Path(binary), Path(case_dir)
     log_path = case_dir / "run.log"
     rc = 0
@@ -44,6 +48,9 @@ def run_case(binary: Path, case_dir: Path, on_event: Callback | None = None) -> 
         )
         assert proc.stdout is not None
         for line in proc.stdout:
+            if cancel is not None and cancel.is_set():
+                proc.terminate()
+                break
             line = line.rstrip("\r\n")
             log.write(line + "\n")
             log.flush()

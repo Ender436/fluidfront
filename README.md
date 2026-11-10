@@ -21,6 +21,15 @@ make bench    # run the solver benchmark (calibration numbers)
 make check    # validation suite (trust layer)
 ```
 
+## API preview (M4 — the WebUI will use exactly this)
+
+```
+curl -F "model=@my_model.stl" -F "u_si=12" -F "tier=preview" localhost:8123/api/cases
+curl -X POST localhost:8123/api/cases/my-model/run
+# live progress:  ws://localhost:8123/ws
+# results:        /api/cases/my-model/forces  and  /api/cases/my-model/field
+```
+
 ## Layout
 
 | Path | What |
