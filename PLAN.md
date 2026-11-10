@@ -252,3 +252,27 @@ testing work everywhere.
   warning instead of one confident-looking average.
 - **Next: M6** visualization polish (iso-surfaces, slice planes, MP4 export);
   revisit coarse-resolution guard rails (M3) informed by the note above.
+- **2026-11-10 — real-world model fixes (user testing with the ME180 kart STL).**
+  Three failure modes found and fixed:
+  1. 500 Internal Server Error on upload: `trimesh.edge_face_count` does not
+     exist in trimesh 5.2 -> replaced with a version-proof boundary-edge count
+     (`np.unique` over sorted edge pairs; caught a reshape-before-sort bug in
+     the first version too). create_case now has a catch-all -> clean 422.
+  2. The kart STL is in centimeters, but the app assumed meters -> Re 79M and
+     a guard-rail refusal. Added Model units (m/cm/mm/in) to the wizard +
+     "model reads 240 m long" sanity warning + model length shown in report.
+  3. tau guard rail: "pick a higher quality" advice was mathematically useless
+     at real speeds (max resolvable Re grows only linearly with size_lu; the
+     2.4m kart at 5 m/s is Re 790k - unreachable at any tier). Replaced the
+     hard refusal with an LES clamp at the measured stability floor tau=0.515:
+     run Smagorinsky at the lowest stable viscosity and report the effective
+     resolved Re honestly. Exact-Re mapping for resolvable cases is unchanged
+     (validated sphere Re=100 tau=0.788 still passes).
+  Also: VRAM budget now also respects the driver single-OpenCL-buffer cap
+  (~1/4 VRAM; measured 955 MB on the 3050 Ti - this, not total VRAM, was why
+  a 56M-cell kart case died at allocation) and time estimates derate ~1.6x
+  for LES. End-to-end proof on the 4 GB laptop: Full_Kart.stl as cm, 5 m/s,
+  24.3M cells, size_lu 61, tau 0.515 + SUBGRID, done in ~3.5 min wall,
+  Cd = 1.10 +/- 0.39 (wake oscillation warning fires - honest as designed).
+- **Next: M6** visualization polish; also verify the new flow on desktop 3090
+  (bigger buffer cap -> higher tiers become usable there).

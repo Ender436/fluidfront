@@ -92,8 +92,11 @@ async def create_case(
     upload.write_bytes(await model.read())
 
     dev = device_info()
-    # cap the mesh so it fits in ~75% of free VRAM (FP16S D3Q19 ~55 B/cell)
-    max_cells = int(dev["free_mi"] * 0.75 * 1024 * 1024 // 55)
+    # cap the mesh so it fits in ~75% of free VRAM (FP16S D3Q19 ~55 B/cell),
+    # AND inside one OpenCL buffer (driver max-memory-allocation cap; measured
+    # 955 MB single buffer on a 4 GB card -> the binding limit, not VRAM)
+    max_cells = min(int(dev["free_mi"] * 0.75 * 1024 * 1024 // 55),
+                    int(dev["maxbuf_mi"] * 0.90 * 1024 * 1024 // 38))
     try:
         rot = tuple(float(v) for v in rotation_deg.replace(";", ",").split(","))
         case, report = build_tunnel_case(
@@ -117,7 +120,8 @@ async def create_case(
            "size_lu": report["layout"].size_lu,
            "cells": report["layout"].nx * report["layout"].ny * report["layout"].nz,
            "t_steps": case["run"]["t_steps"]}
-    rep["estimate_s"] = estimated_seconds(rep["cells"], rep["t_steps"], dev)
+    rep["estimate_s"] = estimated_seconds(rep["cells"], rep["t_steps"], dev,
+                                          subgrid=spec.subgrid)
     (cdir / "report.json").write_text(json.dumps(rep, indent=2))
     jobs.write_status(cname, state="created", percent=0)
 

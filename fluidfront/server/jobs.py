@@ -53,22 +53,30 @@ def device_info() -> dict:
             name, total, used = r.stdout.strip().splitlines()[0].split(",")
             total, used = float(total), float(used)
             return {"name": name.strip(), "total_mi": total, "used_mi": used,
-                    "free_mi": total - used, "source": "nvidia-smi"}
+                    "free_mi": total - used, "source": "nvidia-smi",
+                    # FluidX3D allocates the lattice in ONE OpenCL buffer, and
+                    # drivers cap single allocations (measured: 955 MB of 3822
+                    # usable on RTX 3050 Ti laptop) -> conservative total/4
+                    "maxbuf_mi": total * 0.25}
     except Exception:  # noqa: BLE001 - any nvidia-smi hiccup -> conservative default
         pass
     return {"name": "unknown GPU (assuming 4 GB)", "total_mi": 4096.0,
-            "used_mi": 0.0, "free_mi": 4096.0, "source": "fallback"}
+            "used_mi": 0.0, "free_mi": 4096.0, "source": "fallback",
+            "maxbuf_mi": 1024.0}
 
 
 # BENCH.md calibration (MLUPs @ 256^3-class FP16S cases); first match wins
 _MLUPS_CALIB = [("3050", 2318.0), ("3090", 10732.0)]
 
 
-def estimated_seconds(cells: int, t_steps: int, device: dict | None = None) -> float:
+def estimated_seconds(cells: int, t_steps: int, device: dict | None = None,
+                      subgrid: bool = False) -> float:
     """Pre-run 'about how long?' promise; live progress refines it later."""
     dev = device or device_info()
     name = dev["name"].lower()
     mlups = next((m for k, m in _MLUPS_CALIB if k in name), 2000.0)
+    if subgrid:  # measured on 3050 Ti: Smagorinsky LES ~ 1.6x slower than SRT
+        mlups /= 1.6
     return cells * t_steps / (mlups * 1e6)
 
 

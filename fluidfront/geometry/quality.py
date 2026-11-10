@@ -18,7 +18,7 @@ MIN_FEATURE_VOXELS_FAIL = 2.0
 def boundary_edge_count(mesh: trimesh.Trimesh) -> int:
     """Edges shared by exactly one face (openings in the shell). Version-proof:
     trimesh's private edge-count helpers move around between releases."""
-    pairs = np.sort(mesh.faces[:, [0, 1, 1, 2, 2, 0]], axis=1).reshape(-1, 2)
+    pairs = np.sort(mesh.faces[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2), axis=1)
     _, counts = np.unique(pairs, axis=0, return_counts=True)
     return int((counts == 1).sum())
 
@@ -28,17 +28,26 @@ def inspect_mesh(mesh: trimesh.Trimesh) -> dict:
     problems: list[tuple[str, str, str]] = []
 
     if not mesh.is_watertight:
-        hints = []
-        if hasattr(mesh, "is_winding_consistent") and not mesh.is_winding_consistent:
-            hints.append("some faces point inwards (flipped normals)")
         holes = boundary_edge_count(mesh)
-        problems.append((
-            "warn",
-            "the model has open surfaces (not watertight)",
-            f"the voxelizer needs a closed shell{f' (~{holes} open edges found)'}; "
-            "try the built-in auto-repair, or close holes in Blender "
-            "(select all in Edit Mode -> Mesh > Cleanup > Make Manifold)",
-        ))
+        if holes:
+            extra = ""
+            if hasattr(mesh, "is_winding_consistent") and not mesh.is_winding_consistent:
+                extra = " some faces point inwards (flipped normals);"
+            problems.append((
+                "warn",
+                "the model has open surfaces (not watertight)",
+                f"the voxelizer needs a closed shell (~{holes} open edges "
+                f"found){extra} "
+                "try the built-in auto-repair, or close holes in Blender "
+                "(select all in Edit Mode -> Mesh > Cleanup > Make Manifold)",
+            ))
+        else:
+            problems.append((
+                "hint",
+                "multi-part model (walls shared or overlapping)",
+                "fine for the voxelizer - the parts merge into one solid "
+                "(common for CAD assemblies)",
+            ))
     if hasattr(mesh, "is_winding_consistent") and not mesh.is_winding_consistent:
         problems.append((
             "warn",
