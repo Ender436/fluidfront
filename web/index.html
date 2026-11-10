@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluidfront — hobby CFD, zero fuss</title>
+<link rel="stylesheet" href="/style.css">
+<script type="importmap">
+{"imports": {
+  "three": "/vendor/three.module.js",
+  "three/addons/controls/OrbitControls.js": "/vendor/OrbitControls.js"
+}}
+</script>
+</head>
+<body>
+<header>
+  <div class="brand">Fluid<span>front</span></div>
+  <div class="tag">drop in a model · pick a speed · watch the air</div>
+  <div class="chip" id="devchip">…</div>
+</header>
+
+<nav id="steps">
+  <button data-screen="home" class="on">Cases</button>
+  <button data-screen="new">Import &amp; Conditions</button>
+  <button data-screen="run">Run</button>
+  <button data-screen="results">Results</button>
+</nav>
+
+<main>
+  <!-- ============ home: run library ============ -->
+  <section id="home" class="screen on">
+    <div class="rowhead">
+      <h2>Your simulations</h2>
+      <button class="primary" id="btn-new">+ New simulation</button>
+    </div>
+    <div id="casegrid" class="cards"><p class="muted">loading…</p></div>
+  </section>
+
+  <!-- ============ import + conditions ============ -->
+  <section id="new" class="screen">
+    <h2>Set up a wind-tunnel run</h2>
+    <form id="form" class="card" autocomplete="off">
+      <label class="drop" id="drop">
+        Drop your 3D model here (.stl / .obj / .glb …)
+        <input type="file" id="file" accept=".stl,.obj,.glb,.gltf,.ply,.3mf,.dae">
+        <span id="fileinfo" class="ok"></span>
+      </label>
+      <div class="grid2">
+        <label>Flow speed
+          <input type="number" id="u_si" value="12" min="0.0001" step="any"> <i>m/s</i></label>
+        <label>Fluid
+          <select id="fluid">
+            <option value="air">air (20 °C)</option>
+            <option value="water">water (20 °C)</option>
+          </select></label>
+      </div>
+      <fieldset><legend>Quality</legend>
+        <label class="tier"><input type="radio" name="tier" value="preview">
+          <b>Preview</b><small>fast look · coarse voxels</small></label>
+        <label class="tier"><input type="radio" name="tier" value="standard" checked>
+          <b>Standard</b><small>good balance (recommended)</small></label>
+        <label class="tier"><input type="radio" name="tier" value="detailed">
+          <b>Detailed</b><small>slowest · sharpest wake</small></label>
+      </fieldset>
+      <details><summary>Advanced (usually leave alone)</summary>
+        <div class="grid3">
+          <label>Rotation X° <input type="number" id="rx" value="90" step="15"></label>
+          <label>Rotation Y° <input type="number" id="ry" value="0" step="15"></label>
+          <label>Rotation Z° <input type="number" id="rz" value="0" step="15"></label>
+        </div>
+        <p class="muted">Rotation 90/0/0 stands a Z-up model upright into the
+          flow. Air flows along the model's longest side.</p>
+        <label>Voxels across the model (0 = use quality tier)
+          <input type="number" id="size_lu" value="0" min="0" max="512" step="8"></label>
+        <label>Precision
+          <select id="precision">
+            <option value="fp16s">FP16S (recommended)</option>
+            <option value="fp16c">FP16C</option>
+            <option value="fp32">FP32</option>
+          </select></label>
+      </details>
+      <button class="primary big" type="submit" id="btn-create">Create simulation</button>
+      <div id="newerr" class="err hidden"></div>
+    </form>
+
+    <div id="report" class="card hidden">
+      <h3>Ready to run <span id="rpt-name" class="mono"></span></h3>
+      <div id="rpt-facts" class="facts"></div>
+      <ul id="rpt-warns" class="warns"></ul>
+      <button class="primary big" id="btn-gorun">Start the run</button>
+    </div>
+  </section>
+
+  <!-- ============ run ============ -->
+  <section id="run" class="screen">
+    <h2 id="run-title">Run</h2>
+    <div class="card">
+      <div class="bar"><div id="barfill"></div></div>
+      <div class="facts" id="runfacts">pick a case and press Run</div>
+      <div class="rowbtns">
+        <button class="primary" id="btn-run">Run</button>
+        <button id="btn-stop">Stop</button>
+        <button id="btn-results">Results →</button>
+      </div>
+      <div id="runerr" class="err hidden"></div>
+    </div>
+  </section>
+
+  <!-- ============ results ============ -->
+  <section id="results" class="screen">
+    <h2 id="res-title">Results</h2>
+    <div class="split">
+      <div class="card viewerbox">
+        <div id="viewer"></div>
+        <div class="vctl">
+          <label>field
+            <select id="f-which">
+              <option value="u">velocity</option>
+              <option value="rho">density</option>
+            </select></label>
+          <label>colormap
+            <select id="f-cmap">
+              <option value="turbo">turbo</option>
+              <option value="viridis">viridis</option>
+              <option value="gray">grayscale</option>
+            </select></label>
+          <label>hide slow
+            <input type="range" id="f-thresh" min="0" max="90" value="5"></label>
+          <label>point size
+            <input type="range" id="f-size" min="1" max="10" value="3"></label>
+          <label>model
+            <input type="checkbox" id="f-solid" checked></label>
+          <label>time
+            <select id="f-time"></select></label>
+          <button id="f-refresh">↻</button>
+        </div>
+      </div>
+      <div class="card chartbox">
+        <h3>Force coefficients <span class="muted" id="cdnote"></span></h3>
+        <canvas id="chart" width="430" height="270"></canvas>
+        <div class="facts" id="resfacts"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

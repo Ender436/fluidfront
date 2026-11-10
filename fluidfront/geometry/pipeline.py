@@ -69,7 +69,7 @@ def build_tunnel_case(model_path: Path | str, case_dir: Path | str, *,
                  "length_si": float(length_si), "u_lu": u_lu},
         "options": {"velocity_set": "d3q19", "precision": precision},
         "run": {"t_steps": t_steps, "force_every": force_every,
-                "snapshot_every": max(1000, t_steps // 8)},
+                "snapshot_every": max(1000, t_steps // 8), "write_rho": True},
     }
     report = {"warnings": warnings, "stats": insp["stats"], "layout": lay,
               "blockage": lay.blockage}

@@ -231,3 +231,24 @@ testing work everywhere.
   snapshots now also always fire at the final step. Runner got `cancel`
   event support for stop.
 - **Next: M5** WebUI wizard/viewer against this API.
+- **2026-11-10 — M5 done (WebUI skeleton).** `web/` = plain static ES modules
+  served by FastAPI from the same origin (no Vite/npm build step, no CORS);
+  three.js r170 vendored under `web/vendor/` (MIT, committed) so it runs
+  offline. Four screens (Cases / Import+Conditions / Run / Results) wired to
+  the API: drag-drop model upload -> guard-rail report (Re, tau, blockage,
+  cells, estimated run time); Run screen driven purely by WS status events;
+  Results = three.js GPU point-cloud viewer (velocity magnitude or density,
+  turbo/viridis/gray colormaps, slow-cell threshold, point size, solid model
+  rendered from the flags snapshot, orbit camera, snapshot time selector)
+  + hand-rolled canvas Cd/Cl chart with tail-mean line, a +/- spread and a
+  "wake still oscillating" honesty warning. Browser-tested end-to-end:
+  created the "model" case through the wizard (sphere, preview tier,
+  size_lu 24), watched building->running->done live, viewed t=7500, switched
+  to rho (new: pipeline now sets `write_rho: true` on new cases). Fixed the
+  model-solid flag mask: v3.8 enum is TYPE_S=1, TYPE_E=2, TYPE_X=64, so body
+  cells are 65, not 48 (old mask was v2 numbering). Noted for M3: the 24-LU
+  preview sphere reports a stuck negative Cd, and a 48-LU rerun oscillates
+  (Cd 1.7 +/- 3.4) - coarse-resolution artifact; the UI now shows spread +
+  warning instead of one confident-looking average.
+- **Next: M6** visualization polish (iso-surfaces, slice planes, MP4 export);
+  revisit coarse-resolution guard rails (M3) informed by the note above.

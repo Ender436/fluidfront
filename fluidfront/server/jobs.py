@@ -60,6 +60,18 @@ def device_info() -> dict:
             "used_mi": 0.0, "free_mi": 4096.0, "source": "fallback"}
 
 
+# BENCH.md calibration (MLUPs @ 256^3-class FP16S cases); first match wins
+_MLUPS_CALIB = [("3050", 2318.0), ("3090", 10732.0)]
+
+
+def estimated_seconds(cells: int, t_steps: int, device: dict | None = None) -> float:
+    """Pre-run 'about how long?' promise; live progress refines it later."""
+    dev = device or device_info()
+    name = dev["name"].lower()
+    mlups = next((m for k, m in _MLUPS_CALIB if k in name), 2000.0)
+    return cells * t_steps / (mlups * 1e6)
+
+
 def case_dir(name: str) -> Path:
     d = CASES / name
     if not (d / "case.json").is_file():

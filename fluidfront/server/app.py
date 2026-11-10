@@ -18,13 +18,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 
 from ..gen.schema import load_case
 from ..gen.units import CaseError
 from ..geometry.loaders import GeometryError
 from ..geometry.pipeline import build_tunnel_case
 from .jobs import (CASES, BusyError, JobManager, NotFound, device_info,
-                   read_field, read_forces, snapshots)
+                   estimated_seconds, read_field, read_forces, snapshots)
 
 
 @asynccontextmanager
@@ -103,7 +104,9 @@ async def create_case(
            "blockage": report["blockage"],
            "domain": report["layout"].as_domain(),
            "size_lu": report["layout"].size_lu,
-           "cells": report["layout"].nx * report["layout"].ny * report["layout"].nz}
+           "cells": report["layout"].nx * report["layout"].ny * report["layout"].nz,
+           "t_steps": case["run"]["t_steps"]}
+    rep["estimate_s"] = estimated_seconds(rep["cells"], rep["t_steps"], dev)
     (cdir / "report.json").write_text(json.dumps(rep, indent=2))
     jobs.write_status(cname, state="created", percent=0)
 
@@ -213,3 +216,13 @@ async def ws_events(ws: WebSocket) -> None:
         pass
     finally:
         jobs.unsubscribe(q)
+
+
+# ---------------------------------------------------------------- web app --
+# The WebUI is plain ES modules served from the same origin (no build step,
+# no CORS); three.js is vendored under web/vendor/. Mounted LAST so /api and
+# /ws keep priority.
+
+WEB = Path(__file__).resolve().parents[2] / "web"
+if WEB.is_dir():
+    app.mount("/", StaticFiles(directory=WEB, html=True), name="web")

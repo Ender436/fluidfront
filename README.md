@@ -21,6 +21,9 @@ make bench    # run the solver benchmark (calibration numbers)
 make check    # validation suite (trust layer)
 ```
 
+Then open **http://localhost:8123** — the wizard (import a model, pick a
+speed, run, watch the live 3D viewer) is served from the same port.
+
 ## API preview (M4 — the WebUI will use exactly this)
 
 ```
