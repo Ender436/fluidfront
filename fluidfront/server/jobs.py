@@ -187,6 +187,16 @@ class JobManager:
                 raise NotFound(f"case {name!r} is not running")
             self._cancel.set()
 
+    def shutdown(self) -> None:
+        """Server exiting: stop a running engine so it never outlives us as an
+        orphan hogging the GPU (the worker writes status 'stopped')."""
+        with self._lock:
+            cancel, thread = self._cancel, self._thread
+        if cancel is not None:
+            cancel.set()
+        if thread is not None:
+            thread.join(timeout=5)
+
     @property
     def active(self) -> str | None:
         return self._active

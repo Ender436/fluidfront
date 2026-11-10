@@ -301,6 +301,12 @@ testing work everywhere.
 - **Published.** Public repo live at github.com/Ender436/fluidfront (MIT for
   app code; FluidX3D stays a gitignored pinned clone fetched by `make engine`
   - its non-commercial terms documented in LICENSE + README).
+- **Quit semantics hardened** — Ctrl+C on the server now cleanly stops a
+  running sim (lifespan shutdown -> cancel -> engine terminated; verified:
+  child gone, status 'stopped', port free ~9s with an open websocket; note
+  uvicorn waits for live WS before app-shutdown). Plus prctl(PR_SET_PDEATHSIG)
+  on the engine child so even a FORCE quit (double Ctrl+C) or a server crash
+  can never orphan a GPU-hogging FluidX3D (verified by force-quit test).
 - **Next: M6** visualization polish; also run the full flow on the desktop 3090
   (clone there + `make engine setup serve`; bigger buffer cap -> higher tiers
   become usable, and its BENCH numbers are worth re-measuring live).

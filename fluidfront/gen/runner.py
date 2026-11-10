@@ -13,6 +13,17 @@ import re
 import subprocess
 import threading
 from pathlib import Path
+
+import ctypes
+
+
+def _pdeath_sigterm():
+    """Linux prctl(PR_SET_PDEATHSIG, SIGTERM): the kernel terminates the
+    engine even if we die ungracefully (double Ctrl+C, SIGKILL, crash)."""
+    try:
+        ctypes.CDLL("libc.so.6").prctl(1, 15, 0, 0, 0)
+    except Exception:  # non-critical nicety; graceful shutdown covers us
+        pass
 from typing import Callable
 
 _PROGRESS = re.compile(
@@ -45,6 +56,7 @@ def run_case(binary: Path, case_dir: Path, on_event: Callback | None = None,
             [str(binary)], cwd=str(case_dir),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1,
+            preexec_fn=_pdeath_sigterm,
         )
         assert proc.stdout is not None
         for line in proc.stdout:

@@ -33,6 +33,7 @@ from .jobs import (CASES, BusyError, JobManager, NotFound, case_dir,
 async def lifespan(_app: FastAPI):
     jobs.attach_loop(asyncio.get_running_loop())
     yield
+    jobs.shutdown()
 
 
 app = FastAPI(title="fluidfront", version="0.0.1", lifespan=lifespan)
