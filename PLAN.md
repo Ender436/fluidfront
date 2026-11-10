@@ -274,5 +274,18 @@ testing work everywhere.
   for LES. End-to-end proof on the 4 GB laptop: Full_Kart.stl as cm, 5 m/s,
   24.3M cells, size_lu 61, tau 0.515 + SUBGRID, done in ~3.5 min wall,
   Cd = 1.10 +/- 0.39 (wake oscillation warning fires - honest as designed).
+- **Viewer rotation fix** — the results viewer kept showing the first model
+  it ever loaded (`load()` only built the solid when `!this.solid`, and one
+  Viewer instance is shared across cases), so changing rotation_deg appeared
+  to do nothing even though the engine flags were correctly rotated (proved:
+  full_kart body extent 59x98x39 voxels vs 0,0,90-rotated 46x28x19). Now
+  `load()` disposes the cached solid on case switch (proper geometry/material
+  dispose, no more `viewer.solid = null` leak-hack), re-frames the camera per
+  case, and a tiny GET /api/cases/{name}/stamp (setup.cpp mtime) fingerprint
+  rebuilds the solid if a case was re-created. Solid toggle now just shows/
+  hides + fetches on demand instead of refetching the whole field. Verified
+  in-browser: three kart cases with different rotations each render their own
+  orientation, toggle on/off clean, 0 console errors. Also fixed case cards
+  showing "undefined": WS status events have `case` but no `name` field.
 - **Next: M6** visualization polish; also verify the new flow on desktop 3090
   (bigger buffer cap -> higher tiers become usable there).

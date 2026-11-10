@@ -32,8 +32,14 @@ async function getField(name, which, t, maxPoints) {
   const bin = atob(j.data_b64);
   const buf = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  return { dims: j.dims, ncomp: j.ncomp, t: j.t,
+  return { dims: j.dims, ncomp: j.ncomp, t: j.t, stamp: j.stamp,
            data: new Float32Array(buf.buffer) };
+}
+
+async function getStamp(name) {
+  const r = await fetch(`/api/cases/${name}/stamp`);
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return (await r.json()).stamp;
 }
 
 export class Viewer {
@@ -53,6 +59,7 @@ export class Viewer {
 
     this.points = null;
     this.solid = null;
+    this.stamp = null; // server setup fingerprint of the loaded solid
     this.settings = { field: "u", cmap: "turbo", thresh: 0.05,
                       pointSize: 3, showSolid: true };
     this._raf = null;
@@ -85,6 +92,15 @@ export class Viewer {
     this.points = this.solid = null;
   }
 
+  _disposeSolid() {
+    if (!this.solid) return;
+    this.scene.remove(this.solid);
+    this.solid.geometry.dispose();
+    this.solid.material.dispose();
+    this.solid = null;
+    this.stamp = null;
+  }
+
   setSettings(patch) {
     Object.assign(this.settings, patch);
     this.refresh(); // recolors without re-fetching
@@ -92,18 +108,35 @@ export class Viewer {
 
   // Load flags (model) + field for `name` at snapshot time <= t.
   async load(name, t = null) {
-    this.caseName = name;
-    this.lastT = t;
-    if (this.settings.showSolid && !this.solid) {
-      try {
-        const fl = await getField(name, "flags", 0, 400000);
-        this._buildSolid(fl);
-      } catch (e) { console.warn("flags load:", e.message); }
+    if (this.caseName !== name) {
+      // different case: drop its stale model solid + re-frame the camera
+      this._disposeSolid();
+      this._framed = false;
+      this.caseName = name;
     }
+    this.lastT = t;
+    if (this.settings.showSolid) await this.ensureSolid();
     const f = await getField(name, this.settings.field, t, 200000);
     this._buildPoints(f);
     this.frameInfo = `t=${f.t} · ${f.dims.join("×")}`;
     return this.frameInfo;
+  }
+
+  // Fetch (or rebuild) the model solid if it is missing or the case was
+  // re-created with new settings — rotation/quality are baked into the flags.
+  async ensureSolid() {
+    if (!this.caseName) return;
+    try {
+      const stamp = await getStamp(this.caseName);
+      if (this.solid && stamp === this.stamp) {
+        this.solid.visible = true;
+        return;
+      }
+      const fl = await getField(this.caseName, "flags", this.lastT, 2000000);
+      this._disposeSolid();
+      this._buildSolid(fl);
+      this.stamp = stamp;
+    } catch (e) { console.warn("flags load:", e.message); }
   }
 
   refresh() {

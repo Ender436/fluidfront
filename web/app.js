@@ -99,7 +99,8 @@ function connectWS() {
       renderCases();
       if (state.current) { runScreen(); if (ev.active === state.current) pollRunFacts(); }
     } else if (ev.kind === "status") {
-      state.cases.set(ev.case, { ...state.cases.get(ev.case), ...ev });
+      const prev = state.cases.get(ev.case) || {};
+      state.cases.set(ev.case, { ...prev, ...ev, name: ev.case });
       renderCases();
       if (ev.case === state.current) {
         runScreen();
@@ -301,9 +302,10 @@ $("f-which").onchange = async () => {
 $("f-cmap").onchange = () => state.viewer?.setSettings({ cmap: $("f-cmap").value });
 $("f-thresh").oninput = () => state.viewer?.setSettings({ thresh: $("f-thresh").value / 100 });
 $("f-size").oninput = () => state.viewer?.setSettings({ pointSize: $("f-size").value });
-$("f-solid").onchange = () => {
-  state.viewer?.setSettings({ showSolid: $("f-solid").checked });
-  if (state.viewer) { state.viewer.solid = null; loadFrame(); }
+$("f-solid").onchange = async () => {
+  const on = $("f-solid").checked;
+  state.viewer?.setSettings({ showSolid: on }); // also just shows/hides it
+  if (on && state.viewer) await state.viewer.ensureSolid(); // fetch if needed
 };
 $("f-time").onchange = loadFrame;
 $("f-refresh").onclick = () => { loadFrame(); loadForces(); };

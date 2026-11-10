@@ -24,8 +24,9 @@ from ..gen.schema import load_case
 from ..gen.units import CaseError
 from ..geometry.loaders import GeometryError
 from ..geometry.pipeline import build_tunnel_case
-from .jobs import (CASES, BusyError, JobManager, NotFound, device_info,
-                   estimated_seconds, read_field, read_forces, snapshots)
+from .jobs import (CASES, BusyError, JobManager, NotFound, case_dir,
+                   device_info, estimated_seconds, read_field, read_forces,
+                   snapshots)
 
 
 @asynccontextmanager
@@ -214,6 +215,14 @@ def field(name: str, which: str = "u", t: int | None = None,
     return {"which": which, "dims": [nx, ny, nz], "ncomp": ncomp,
             "t": t_actual, "dtype": "float32-le",
             "data_b64": base64.b64encode(arr.tobytes()).decode()}
+
+
+@app.get("/api/cases/{name}/stamp")
+def stamp(name: str) -> dict:
+    """Cheap identity of a case's setup: changes whenever it is re-created
+    (new rotation / quality), so the viewer knows to rebuild the model."""
+    src = case_dir(name) / "gen" / "setup.cpp"
+    return {"stamp": int(src.stat().st_mtime)}
 
 
 # ------------------------------------------------------------------- events -
