@@ -4,10 +4,11 @@ Intuitive GPU CFD for hobbyists: drop in a 3D model, pick a condition, watch
 the flow. No meshing, no config files, no CFD expertise.
 
 - **Solver engine:** [FluidX3D](https://github.com/ProjectPhysX/FluidX3D)
-  (lattice Boltzmann, OpenCL, runs on any GPU) — pinned fork in `engine/`.
+  (lattice Boltzmann, OpenCL, runs on any GPU) — pinned clean clone, fetched
+  by `make engine` (not redistributed here).
 - **App:** Python server (`fluidfront/`) + local WebUI (`web/`, three.js).
-- **License:** our code MIT; the bundled engine fork keeps FluidX3D's
-  non-commercial terms → the combined app must stay non-commercial.
+- **License:** our code MIT; the engine keeps FluidX3D's non-commercial
+  terms → the combined app must stay non-commercial.
 
 See **PLAN.md** for the full plan, milestones, and execution constraints.
 

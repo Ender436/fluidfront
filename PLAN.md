@@ -298,5 +298,9 @@ testing work everywhere.
   "hide slow (<X%)" for velocity, "keep wake (<X% inflow)" in wake mode,
   "hide calm" for density. Verified on full_kart: 205k points plain vs
   1.8k/3.5k/6.5k at 30/60/90% wake cutoffs, toggle back restores fast mode.
-- **Next: M6** visualization polish; also verify the new flow on desktop 3090
-  (bigger buffer cap -> higher tiers become usable there).
+- **Published.** Public repo live at github.com/Ender436/fluidfront (MIT for
+  app code; FluidX3D stays a gitignored pinned clone fetched by `make engine`
+  - its non-commercial terms documented in LICENSE + README).
+- **Next: M6** visualization polish; also run the full flow on the desktop 3090
+  (clone there + `make engine setup serve`; bigger buffer cap -> higher tiers
+  become usable, and its BENCH numbers are worth re-measuring live).
