@@ -1,10 +1,10 @@
-"""Validation suite: the trust layer of Flowbench.
+"""Validation suite: the trust layer of Fluidfront.
 
 Runs real end-to-end cases through the exact pipeline the app uses
 (case.json -> generated setup.cpp -> compiled FluidX3D -> forces.csv +
 VTK snapshots) and compares against analytic / literature values.
 
-    python -m flowbench.validate.runner [--only NAME] [--fast]
+    python -m fluidfront.validate.runner [--only NAME] [--fast]
 
 Cases (default):
   cyl2d_re100    2D cylinder, Re=100:  Cd = 1.35 +/- (voxel tolerance),
@@ -25,11 +25,11 @@ from pathlib import Path
 
 import numpy as np
 
-from flowbench.gen.build import BuildError, build, write_case_files
-from flowbench.gen.runner import run_case
-from flowbench.gen.schema import load_case
-from flowbench.gen.units import CaseError
-from flowbench.vtkio import load_vtk
+from fluidfront.gen.build import BuildError, build, write_case_files
+from fluidfront.gen.runner import run_case
+from fluidfront.gen.schema import load_case
+from fluidfront.gen.units import CaseError
+from fluidfront.vtkio import load_vtk
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "cases" / "_validate"
@@ -78,7 +78,7 @@ CASES.append((SPHERE3D, "check_sphere3d"))
 def prepare_sphere3d(case_dir: Path) -> None:
     """Build the STL model with the real geometry pipeline (M2 coverage):
     trimesh sphere -> loaders cleanup -> binary STL on disk."""
-    from flowbench.geometry.loaders import export_binary_stl
+    from fluidfront.geometry.loaders import export_binary_stl
     import trimesh
 
     mesh = trimesh.creation.icosphere(subdivisions=3, radius=0.5)  # 1 m dia
@@ -169,7 +169,7 @@ def _event_printer(state: dict):
                 state["next_pct"] += 20
                 print(f"    [{ev['percent']:3d}%] {ev['mlups']} MLUPs, eta {ev['eta']}",
                       flush=True)
-        elif ev.get("line", "").startswith("flowbench:"):
+        elif ev.get("line", "").startswith("fluidfront:"):
             print("    " + ev["line"], flush=True)
     return on_event
 

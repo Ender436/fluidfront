@@ -9,10 +9,10 @@ Build (headless, no X11):
 
     make Linux -j$(nproc)        # -> bin/FluidX3D
 
-## How Flowbench drives the engine
+## How Fluidfront drives the engine
 
 The app never patches the solver core. A case is entirely expressed through
-two **generated** files (see `flowbench/gen/`):
+two **generated** files (see `fluidfront/gen/`):
 
 - `src/setup.cpp` — generated from `case.json`: creates the `LBM` object,
   geometry (procedural primitives or `voxelize_stl` for STL models),
@@ -35,7 +35,7 @@ Notes:
   OpenCL dev packages needed.
 - One shared build tree: cases build serially (fine for a local app; a
   per-case build dir is possible later if we ever parallelize the queue).
-- `flowbench/validate/runner.py` is the tripwire for any engine drift or
+- `fluidfront/validate/runner.py` is the tripwire for any engine drift or
   bridge bug: it re-runs physical validations (cylinder Re=100 Cd/St,
   Poiseuille pipe) through the real pipeline. Run it after every engine
   change: `make check`.

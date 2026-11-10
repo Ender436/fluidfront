@@ -1,4 +1,4 @@
-# Flowbench — intuitive GPU CFD for hobbyists (PLAN, decisions locked)
+# Fluidfront — intuitive GPU CFD for hobbyists (PLAN, decisions locked)
 
 > A FluidX3D-style tool with a real user interface: drop in a 3D model
 > (STL/OBJ/GLB), pick a condition ("wind tunnel at 60 m/s", quality level),
@@ -95,7 +95,7 @@ quality capped where physics wouldn't be trustworthy anyway.
 ## 4. Milestones (each ends runnable + tested)
 
 **M0 — Scaffold (½ day).** Repo layout (§6), Python venv (fastapi, trimesh,
-numpy, pyevtk), Vite app stub, `flowbench serve`. Clone + build FluidX3D v3.8
+numpy, pyevtk), Vite app stub, `fluidfront serve`. Clone + build FluidX3D v3.8
 on the laptop; run its built-in benchmark → first MLUPs/VRAM calibration.
 
 **M1 — Engine bridge (biggest de-risk).** FluidX3D fork with a template
@@ -161,7 +161,7 @@ free-surface fun cases.
 project1/
 ├── PLAN.md / README.md / LICENSE (MIT, our code)
 ├── Makefile                    # serve, check, bench
-├── flowbench/
+├── fluidfront/
 │   ├── gen/         # case.json schema, setup.cpp templates, generator
 │   ├── geometry/    # loaders.py, watertight.py, autolayout.py
 │   ├── presets/     # wind_tunnel.py, room_fan.py, pipe.py, materials.py
@@ -198,7 +198,7 @@ testing work everywhere.
   Gotchas learned: VTK writer appends the field name itself (`OUT` must end
   in `/`, else `uu-*.vtk`); data layout is AoS cell-major big-endian, x
   fastest; float literals need `32.0f` not `32f`.
-- **2026-11-09 — M2 done.** Geometry pipeline (`flowbench/geometry/`):
+- **2026-11-09 — M2 done.** Geometry pipeline (`fluidfront/geometry/`):
   loaders (STL/OBJ/GLB via trimesh -> merged/cleaned **binary** STL),
   quality checks with human hints (watertight/open-edge count, normals,
   low-poly), auto-layout (tunnel fit: 4x-width/8x-length rules, blockage
@@ -210,4 +210,8 @@ testing work everywhere.
   steady wake, within tolerance). New hard guard rail: tau < 0.512 -> refuse
   with actionable advice ("raise quality / slow down"), LES auto-on 0.512-0.545.
   `make check` = cyl2d + poiseuille + sphere all PASS.
-- **Next: M3** presets + auto-parameterization (the "no CFD knowledge" brain).
+- **2026-11-09 — renamed flowbench → fluidfront.** "flowbench" is taken on
+  PyPI; rename would only get more expensive over time. Package, imports,
+  Makefile, docs all updated; validation re-run under the new name (green).
+- **Next: M4** app server (user chose to build the app skeleton before M3's
+  solver-refinement presets, which will grow inside real usage).

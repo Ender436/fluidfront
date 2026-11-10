@@ -12,13 +12,13 @@ setup:
 	.venv/bin/pip install -e .
 
 serve:
-	$(PY) -m uvicorn flowbench.server.app:app --port 8123
+	$(PY) -m uvicorn fluidfront.server.app:app --port 8123
 
 bench:
 	cd engine/FluidX3D && ./bin/FluidX3D
 
 check:
-	$(PY) -m flowbench.validate.runner
+	$(PY) -m fluidfront.validate.runner
 
 clean:
 	cd engine/FluidX3D && make clean

@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "flowbench"
+name = "fluidfront"
 version = "0.0.1"
 description = "Intuitive GPU CFD for hobbyists (FluidX3D engine + WebUI)"
 requires-python = ">=3.11"
@@ -15,4 +15,4 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["flowbench*"]
+include = ["fluidfront*"]
