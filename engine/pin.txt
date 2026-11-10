@@ -1,0 +1,7 @@
+# Pinned engine snapshot -- Flowbench drives the solver only through the
+# generated src/setup.cpp + src/defines.hpp, never through local patches.
+# Fetch it with:  make engine
+url:    https://github.com/ProjectPhysX/FluidX3D.git
+tag:    v3.8
+commit: 50150a761032beda1641cdf44a34f55e17c58670
+clone_at: engine/FluidX3D        # gitignored; recreate with `make engine`

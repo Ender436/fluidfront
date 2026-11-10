@@ -1,0 +1,14 @@
+# FluidX3D solver: pinned nested clone, recreated by `make engine`
+# (see engine/pin.txt for the exact tag/commit)
+engine/FluidX3D/
+# user simulation cases (large binaries)
+cases/
+# python
+.venv/
+__pycache__/
+*.egg-info/
+# web
+web/node_modules/
+web/dist/
+# scratch
+stl/*.stl

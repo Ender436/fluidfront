@@ -1,0 +1,201 @@
+# Flowbench — intuitive GPU CFD for hobbyists (PLAN, decisions locked)
+
+> A FluidX3D-style tool with a real user interface: drop in a 3D model
+> (STL/OBJ/GLB), pick a condition ("wind tunnel at 60 m/s", quality level),
+> watch a beautiful live 3D flow, get honest drag numbers — no meshing, no
+> config files, no CFD knowledge required.
+
+## 0. Decisions (locked Nov 2026)
+
+**Execution constraints (user rules, always in force):**
+- File edits only inside the project directory or a temp directory
+  (`/tmp/opencode`); anything elsewhere → ask first.
+- No system-package installs or dev-environment changes that leak outside
+  this project → everything project-local: Python `venv` in `.venv/`, npm in
+  `web/node_modules/`, engine pinned in `engine/`. If a genuine system
+  dependency appears (e.g. an OpenCL driver component), ask before installing.
+
+| Question | Decision |
+|---|---|
+| Primary use cases | **External aerodynamics** — model rockets, cars, planes. Secondary: **fans / indoor flow**. |
+| Commercial | Not a goal. Hobby project for hobbyists. Leaning on other OSS is explicitly OK where the license allows. |
+| Solver engine | **FluidX3D v3.8 (forked, driven by generated setup files)** — see §2. Its non-commercial license is acceptable; our own layers stay MIT. |
+| Hardware | Main machine: desktop **RTX 3090 (24 GB)** — VRAM is not a constraint. Dev machine: this laptop (RTX 3050 Ti, 4 GB) for building/testing small grids. FluidX3D is OpenCL → runs identically on both. |
+| UI | **Localhost WebUI** (Vite + three.js) talking to a local Python server. |
+
+## 1. Why wrapping FluidX3D instead of writing our own solver (changed from first draft)
+
+Their FAQ's benchmark table (verified from the README, Nov 2026):
+- **RTX 3090: 5,418 MLUPs/s (FP32)** and **10,732 MLUPs/s (FP32/FP16S)** —
+  ~10-30× what a from-scratch Python/Warp core would realistically reach.
+- Memory: 93 B/cell (FP32) → **~260 M cells ≈ 640³**; 55 B/cell (FP16S) →
+  **~450 M cells ≈ 770³** in 24 GB.
+- Practical: 256³ case settles in **well under a minute**, 512³ turbulent wake
+  case in **minutes**. "Detailed" quality can genuinely mean 512³–640³.
+
+It also ships, already validated, the things that would be months to build:
+GPU STL voxelization, interpolated bounce-back boundaries, KBC entropic +
+Smagorinsky stabilization for high Re, force measurement (momentum exchange),
+VTK export, checkpointing, thermal module, and it runs on OpenCL (both our
+GPUs, and any hobbyist's AMD/Intel too). License: source-available, free for
+non-commercial use — fine for this project's stated goals.
+
+**What remains original (where the actual user value lives):** everything in
+front of the solver — the wizard, case files, geometry placement,
+auto-parameterization, live field streaming, the three.js viewer, force charts,
+export, and the "guard rails" that replace CFD expertise.
+
+## 2. Architecture
+
+```
+┌──────────────────────────────┐       ┌─────────────────────────────────┐
+│ WebUI (localhost)            │  WS   │ App server (Python/FastAPI)     │
+│ Vite + three.js + TS         │◄─────►│ case manager, job runner,       │
+│ - import & placement gizmo   │  HTTP │ case.json → setup.cpp generator,│
+│ - live field renderer        └──────►│ snapshot/force tailer, exports  │
+│ - charts, results, galleries │       │            │ spawns             │
+└──────────────────────────────┘       │            ▼                    │
+                                       │ FluidX3D fork (OpenCL, uncored  │
+                                       │ modifications): compiled from   │
+                                       │ generated setup.cpp per case;   │
+                                       │ writes snapshot VTK/PNG +       │
+                                       │ forces.csv in a loop            │
+                                       └─────────────────────────────────┘
+```
+
+Engine contract (uses only FluidX3D's documented extension points — no core
+hacks):
+- **Case → solver:** `case.json` (geometry path/transform, fluid, speed,
+  quality, preset) → generated `setup.cpp` from templates → compile
+  (~5-30 s via their make.sh machinery) → run binary with device pick.
+- **Live data:** the generated setup runs in a loop: `lbm.run(N)` → dump
+  downsampled field snapshot (binary VTK) + append force row via
+  `measure_force()` → server tails these files and streams to the browser.
+- **Geometry:** any format (OBJ/GLB/STL) → trimesh → watertight check →
+  binary STL → `lbm.voxelize_stl(path, center, rotation, size)`; the wizard's
+  placement handles produce exactly those arguments.
+
+## 3. The product: 4 screens (unchanged from first draft)
+
+1. **Import** — drag&drop model → 3D viewer with move/scale/rotate handles;
+   auto-fitted tunnel domain with padding.
+2. **Conditions** — Case preset: *Wind tunnel* (rocket/car/plane), *Room +
+   fan*, *Pipe*; fluid (**Air / Water / Custom**), speed in real units,
+   **Quality** (Preview / Standard / Detailed → grid size). Reynolds, lattice
+   units, τ, stabilization: computed silently, shown as info.
+3. **Run** — live 3D (speed/pressure/vorticity, slices, tracers/streamlines,
+   wake iso-surfaces), live Cd/Cl chart, "flow settled ✓", pause/stop.
+4. **Results** — Cd/Cl with confidence note (grid-convergence based), key
+   visuals, one-click MP4/GIF + VTK (ParaView) export, case folder to share.
+
+Guard rails: resolution warnings ("fin is 3 voxels thick — use Detailed"),
+inlet ramp + sponge layers, blow-up detector with auto-rollback/retune,
+quality capped where physics wouldn't be trustworthy anyway.
+
+## 4. Milestones (each ends runnable + tested)
+
+**M0 — Scaffold (½ day).** Repo layout (§6), Python venv (fastapi, trimesh,
+numpy, pyevtk), Vite app stub, `flowbench serve`. Clone + build FluidX3D v3.8
+on the laptop; run its built-in benchmark → first MLUPs/VRAM calibration.
+
+**M1 — Engine bridge (biggest de-risk).** FluidX3D fork with a template
+`setup.cpp` + `case.json` → generator round-trip: run a cylinder-in-tunnel
+case end-to-end; snapshots + forces.csv appear; replay viewer reads them.
+**Validation:** Taylor–Green and channel flow quick checks, then cylinder at
+Re=100 → Cd ≈ 1.35±0.05, St ≈ 0.165 vs literature. This suite runs on every
+code change after; it's the trust layer.
+
+**M2 — Geometry pipeline.** trimesh loader (STL/OBJ/GLB→binary STL),
+watertight check + repair hints, bbox measure, auto domain fit + padding per
+preset, transform handles → (center, rotation, size) args. Voxel-quality
+estimates (min feature size in voxels) → warnings.
+
+**M3 — Presets + auto-parameterization (the "no CFD knowledge" brain).**
+Wind-tunnel BC template (Zou/He ramped inlet, convective outlet + sponge,
+slip sides); Re-based speed→lattice mapping with Ma guard; KBC on above Re
+threshold; rocket-specific defaults (slender-body domain aspect, spin off);
+fan preset v1 (actuator-disk momentum region inside the generated setup).
+Force per object, settled-flow detector, time estimates from M0 calibration,
+checkpoint/restore, stability auto-recovery.
+
+**M4 — App server.** Case CRUD on disk (`case.json`, `geometry.*`,
+`checkpoints/`, `snapshots/`, `forces.csv`), start/pause/stop, WebSocket
+status + downsampled field streaming (throttled), VTK export, device/VRAM
+budget model.
+
+**M5 — WebUI wizard + live viewer (the "wow" milestone).** Four screens from
+§3. Viewer: slice planes + particles + surface coloring, colormap switcher,
+orbit camera. Cd/Cl live chart. Run library with thumbnails.
+
+**M6 — Visualization polish.** Q-criterion wake iso-surfaces, cinematic
+off-screen render pass → ffmpeg MP4/GIF, results report page, share-case.
+
+**M7 — Extras (as desired).** FP16S storage build flag for 700³+ grids;
+thermal preset (conjugate heat transfer is in FluidX3D already); room/vent
+presets v2 (proper fan curves, porous media); multi-GPU; nicer dam-break /
+free-surface fun cases.
+
+## 5. Risks & mitigations
+
+- **setup.cpp template fragility / API drift on FluidX3D updates** → pin fork
+  at v3.8; M1 validation suite is the tripwire; keep generator + templates
+  small and fully covered by the M1 cases.
+- **Live-view granularity** (snapshot cadence) → adaptive snapshot interval
+  scaled to grid size; interpolation/decimation client-side; FluidX3D's own
+  PNG renderer remains available as a fallback display.
+- **High Re (rockets, cars) on coarse grids** → KBC/Smagorinsky built into
+  presets; confidence notes state the error class; "Detailed" tier pushes to
+  512³+ where the 3090 makes it minutes.
+- **Thin features voxelizing badly** → min-feature warnings (M2), upsell to
+  Detailed quality; Cd computed against *voxelized* projected area so numbers
+  stay self-consistent.
+- **Scope creep into engineering CFD** → README scope: fast, qualitative-to-
+  semi-quantitative design tool; VTK export is the escape hatch to ParaView.
+- **Licensing** → our server/UI = MIT; the bundled FluidX3D fork keeps its
+  non-commercial license, so the combined app must stay non-commercial. Fine
+  per §0; revisit if that ever changes (fallback: clean-room Warp core).
+
+## 6. Repo layout
+
+```
+project1/
+├── PLAN.md / README.md / LICENSE (MIT, our code)
+├── Makefile                    # serve, check, bench
+├── flowbench/
+│   ├── gen/         # case.json schema, setup.cpp templates, generator
+│   ├── geometry/    # loaders.py, watertight.py, autolayout.py
+│   ├── presets/     # wind_tunnel.py, room_fan.py, pipe.py, materials.py
+│   ├── server/      # app.py (FastAPI), jobs.py, streaming.py, exports.py
+│   └── validate/    # cylinder_re100.py, taylor_green.py, channel.py, runner
+├── engine/FluidX3D/ # pinned fork (v3.8) + our templates/hooks
+├── web/             # Vite + three.js + TS (viewer/, wizard/, api/)
+├── cases/           # user cases (gitignored)
+└── stl/             # sample models (rocket, car, sphere, cylinder…)
+```
+
+## 7. Definition of "v0 works" (the demo that proves the whole idea)
+
+On the 3090: drop a model-rocket STL → Wind tunnel / Air / 60 m/s / Standard
+→ within ~5 min: settled flow, live 3D wake visualization, Cd curve, one-click
+MP4. On the laptop: same flow at Preview/Standard-small so development and
+testing work everywhere.
+
+## 8. Progress log
+
+- **2026-11-09 — M0 done.** Scaffold, `.venv`, FastAPI serve test, FluidX3D
+  v3.8 pinned (tag v3.8 = `50150a7`; nested clone gitignored, `make engine`
+  clones if missing, pin in `engine/pin.txt`), headless `make Linux` build OK
+  with vendored OpenCL headers. Laptop calibration in BENCH.md: RTX 3050 Ti
+  = 2318 MLUPs (256³ FP16S), 984 MiB.
+- **2026-11-09 — M1 done.** Generator (`case.json` → `setup.cpp` +
+  `defines.hpp`, token templating) + build/run/progress-parse + binary-VTK
+  loader. `make check` passes end-to-end through the real pipeline:
+  - `cyl2d_re100` (D2Q9, D=32LU, exact Re via nu_lu=0.032): **Cd = 1.349**
+    (lit. 1.35–1.37), **St = 0.172** (lit. ~0.165) → exact-Re mapping and
+    `object_force` measurement validated.
+  - `poiseuille_3d` (pipe R=63, tau=1, volume force): parabolic-profile
+    **L2 error 0.18%** (want <5%) → voxelized walls + SI-free snapshots OK.
+  Gotchas learned: VTK writer appends the field name itself (`OUT` must end
+  in `/`, else `uu-*.vtk`); data layout is AoS cell-major big-endian, x
+  fastest; float literals need `32.0f` not `32f`.
+- **Next: M2** geometry pipeline (trimesh → binary STL, auto-fit + padding).

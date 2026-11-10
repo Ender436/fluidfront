@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flowbench"
+version = "0.0.1"
+description = "Intuitive GPU CFD for hobbyists (FluidX3D engine + WebUI)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+geo = ["trimesh>=4"]   # geometry pipeline (M2)
+
+[tool.setuptools.packages.find]
+include = ["flowbench*"]
