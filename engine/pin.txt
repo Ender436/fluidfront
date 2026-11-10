@@ -1,4 +1,4 @@
-# Pinned engine snapshot -- Flowbench drives the solver only through the
+# Pinned engine snapshot -- Fluidfront drives the solver only through the
 # generated src/setup.cpp + src/defines.hpp, never through local patches.
 # Fetch it with:  make engine
 url:    https://github.com/ProjectPhysX/FluidX3D.git

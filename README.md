@@ -38,7 +38,16 @@ curl -X POST localhost:8123/api/cases/my-model/run
 | Path | What |
 |---|---|
 | `fluidfront/` | app server, case generator, geometry, presets, validation |
-| `engine/FluidX3D/` | pinned solver fork (see `engine/README.md`) |
-| `web/` | WebUI (Vite + three.js) — scaffolded in M5 |
+| `engine/FluidX3D/` | pinned clean clone of the solver (see `engine/README.md`) |
+| `web/` | WebUI (plain ES modules + vendored three.js, no build step) |
 | `cases/` | user case folders (gitignored) |
 | `stl/` | sample models (gitignored) |
+
+## Third-party software & licensing
+
+- **FluidX3D** (solver engine, ProjectPhysX): source-available but
+  **non-commercial**; NOT included in this repo - `make engine` clones the
+  pinned upstream tag into `engine/FluidX3D/` (gitignored). The combined app
+  must therefore stay non-commercial. See `LICENSE` and `engine/pin.txt`.
+- **three.js** (MIT): vendored under `web/vendor/` so the UI runs offline.
+- Everything else in this repository: MIT (see `LICENSE`).

@@ -1,1 +1,1 @@
-"""Flowbench: intuitive GPU CFD for hobbyists."""
+"""Fluidfront: intuitive GPU CFD for hobbyists."""
