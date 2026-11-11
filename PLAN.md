@@ -334,6 +334,11 @@ testing work everywhere.
   and progress-handler exceptions are logged, not fatal. Unit-tested the
   WinError-5 simulation on Linux (patched Path.replace to throw) + real run
   with exploding handler -> engine reaped, no orphan; full Linux smoke green.
+- **Desktop validated (native Windows, RTX 3090).** Two clean test runs after
+  the two Windows fixes; kart case (151M cells) sustains ~9.7k MLUPs / ~850
+  GB/s, driver single-buffer cap 6143 MB (vs 955 MB laptop -> much bigger
+  cases unlocked). BENCH.md now has real measured 3090 numbers; time-estimate
+  calibration updated 10732 -> 9700 (measured steady state, not 256^3 peak).
 - **Next: M6** visualization polish; also run the full flow on the desktop 3090
   (clone there + `make engine setup serve`; bigger buffer cap -> higher tiers
   become usable, and its BENCH numbers are worth re-measuring live).

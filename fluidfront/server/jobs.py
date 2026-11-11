@@ -65,8 +65,10 @@ def device_info() -> dict:
             "maxbuf_mi": 1024.0}
 
 
-# BENCH.md calibration (MLUPs @ 256^3-class FP16S cases); first match wins
-_MLUPS_CALIB = [("3050", 2318.0), ("3090", 10732.0)]
+# BENCH.md calibration (MLUPs @ 256^3-class FP16S cases); first match wins.
+# 3090 value is the measured steady state of a 151M-cell real case (9.7k),
+# not the 256^3 benchmark peak (10.7k) - honest estimates beat optimistic.
+_MLUPS_CALIB = [("3050", 2318.0), ("3090", 9700.0)]
 
 
 def estimated_seconds(cells: int, t_steps: int, device: dict | None = None,

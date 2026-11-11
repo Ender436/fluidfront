@@ -14,16 +14,24 @@ Per-device solver throughput, measured with the pinned engine build
 
 Measured 2026-11-09 (log: `/tmp/opencode/fx3d_bench_laptop.log`).
 
-## Desktop — RTX 3090 (24 GB) — from FluidX3D's own benchmark table (v3.8)
+## Desktop — RTX 3090 (24 GB), native Windows, driver 621.01
 
-| Precision | MLUPs/s (256³-class benchmark) |
+Upstream reference (FluidX3D v3.8 benchmark table): FP32/D3Q27 5418,
+**FP16S 10732**, FP16C 10215 MLUPs/s at 256³-class.
+
+Measured 2026-11-11 on the real Windows app (kart case, full_kart-2:
+424 x 920 x 388 = 151.35M cells, D3Q19 FP16S, STL voxelize, ~37k steps):
+
+| Metric | Value |
 |---|---|
-| FP32 (D3Q27) | 5418 |
-| FP16S | 10732 |
-| FP16C | 10215 |
+| Steady-state throughput | **~9,650-9,700 MLUPs/s** (up to ~64 steps/s) |
+| Bandwidth | ~800-860 GB/s |
+| Memory | GPU 9.67 GB, CPU host copies 4.19 GB |
+| Single-buffer cap (driver) | 6143 MB global (vs 955 MB on the 3050 Ti!) |
 
-Max resolution at 24 GB: ~641³ (FP32) / ~765³ (FP16S). To be re-measured
-on the 3090 when it's set up as the server machine.
+Note the honest number for estimates is the ~9.7k real-case figure, not
+the 10.7k 256³ peak: large in-scene cases sustain ~90% of benchmark rate.
+Buffer cap of 6143 MB means max single-lattice case ~500M cells FP16S.
 
 ## What this means for UX
 
