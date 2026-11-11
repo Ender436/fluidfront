@@ -149,6 +149,12 @@
             <input type="checkbox" id="f-wake"></label>
           <label id="l-size">point size
             <input type="range" id="f-size" min="1" max="10" value="3"></label>
+          <label id="l-detail" title="view resolution only: how many points / how fine an eddy surface the browser draws; raise it to see more detail from high-resolution runs">view
+            <select id="f-detail">
+              <option value="fast">fast</option>
+              <option value="balanced" selected>balanced</option>
+              <option value="sharp">sharp</option>
+            </select></label>
           <label>model
             <input type="checkbox" id="f-solid" checked></label>
           <label>time

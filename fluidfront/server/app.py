@@ -17,7 +17,8 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (FastAPI, File, Form, HTTPException, Response,
+                     UploadFile, WebSocket, WebSocketDisconnect)
 from fastapi.staticfiles import StaticFiles
 
 from ..gen.schema import load_case
@@ -207,15 +208,19 @@ def snapshot_list(name: str) -> dict:
 
 @app.get("/api/cases/{name}/field")
 def field(name: str, which: str = "u", t: int | None = None,
-          max_points: int = 200_000) -> dict:
+          max_points: int = 200_000, fmt: str = "json"):
     try:
-        arr, meta = read_field(name, which, t, max_points=min(max_points, 2_000_000))
+        arr, meta = read_field(name, which, t, max_points=min(max_points, 4_000_000))
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     nx, ny, nz, ncomp, t_actual = meta
-    return {"which": which, "dims": [nx, ny, nz], "ncomp": ncomp,
-            "t": t_actual, "dtype": "float32-le",
-            "data_b64": base64.b64encode(arr.tobytes()).decode()}
+    info = {"which": which, "dims": [nx, ny, nz], "ncomp": ncomp,
+            "t": t_actual, "dtype": "float32-le"}
+    if fmt == "bin":  # raw float32 + X-Meta header: ~25% lighter than base64
+        return Response(content=arr.tobytes(),
+                        media_type="application/octet-stream",
+                        headers={"X-Meta": json.dumps(info)})
+    return {**info, "data_b64": base64.b64encode(arr.tobytes()).decode()}
 
 
 @app.get("/api/cases/{name}/stamp")
@@ -227,7 +232,8 @@ def stamp(name: str) -> dict:
 
 
 @app.get("/api/cases/{name}/q")
-def q_field(name: str, t: int | None = None, grid: int = 96) -> dict:
+def q_field(name: str, t: int | None = None, grid: int = 96,
+            fmt: str = "json"):
     """Q-criterion vortex grid (uniform cube, physical 1/s^2) for the
     iso-surface view. iso_lo/iso_hi bracket the slider's iso-level range."""
     try:
@@ -236,11 +242,15 @@ def q_field(name: str, t: int | None = None, grid: int = 96) -> dict:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return {"dims": list(res["dims"]), "full_dims": list(res["full_dims"]),
+    info = {"dims": list(res["dims"]), "full_dims": list(res["full_dims"]),
             "t": t_actual,
             "iso_lo": res["iso_lo"], "iso_hi": res["iso_hi"],
-            "dtype": "float32-le",
-            "data_b64": base64.b64encode(res["q"].tobytes()).decode()}
+            "dtype": "float32-le"}
+    if fmt == "bin":
+        return Response(content=res["q"].tobytes(),
+                        media_type="application/octet-stream",
+                        headers={"X-Meta": json.dumps(info)})
+    return {**info, "data_b64": base64.b64encode(res["q"].tobytes()).decode()}
 
 
 # ------------------------------------------------------------------- events -

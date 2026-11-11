@@ -25,17 +25,25 @@ function ramp(cmap, t) {
           stops[i][2] + (stops[i + 1][2] - stops[i][2]) * f];
 }
 
+// View-detail budgets: how many points/voxels/Q-grid cells the browser asks
+// the server for. The simulation physics is fixed at run time; this only
+// controls how much of it the view shows (a detailed sim has more real detail
+// to show once the budget is raised).
+const DETAIL = {
+  fast: { points: 100_000, solid: 500_000, qgrid: 64 },
+  balanced: { points: 300_000, solid: 2_000_000, qgrid: 96 },
+  sharp: { points: 1_000_000, solid: 4_000_000, qgrid: 128 },
+};
+
 async function getField(name, which, t, maxPoints) {
-  const p = new URLSearchParams({ which, max_points: String(maxPoints) });
+  const p = new URLSearchParams({ which, max_points: String(maxPoints),
+                                  fmt: "bin" });
   if (t !== null && t !== undefined) p.set("t", String(t));
   const r = await fetch(`/api/cases/${name}/field?${p}`);
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-  const j = await r.json();
-  const bin = atob(j.data_b64);
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  return { dims: j.dims, ncomp: j.ncomp, t: j.t, stamp: j.stamp,
-           data: new Float32Array(buf.buffer) };
+  const meta = JSON.parse(r.headers.get("X-Meta"));
+  return { dims: meta.dims, ncomp: meta.ncomp, t: meta.t,
+           data: new Float32Array(await r.arrayBuffer()) };
 }
 
 async function getStamp(name) {
@@ -44,17 +52,15 @@ async function getStamp(name) {
   return (await r.json()).stamp;
 }
 
-async function getQ(name, t) {
-  const p = new URLSearchParams({ grid: "96" });
+async function getQ(name, t, grid) {
+  const p = new URLSearchParams({ grid: String(grid || 96), fmt: "bin" });
   if (t !== null && t !== undefined) p.set("t", String(t));
   const r = await fetch(`/api/cases/${name}/q?${p}`);
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-  const j = await r.json();
-  const bin = atob(j.data_b64);
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  return { q: new Float32Array(buf.buffer), dims: j.dims, t: j.t,
-           full_dims: j.full_dims, iso_lo: j.iso_lo, iso_hi: j.iso_hi };
+  const meta = JSON.parse(r.headers.get("X-Meta"));
+  return { q: new Float32Array(await r.arrayBuffer()), dims: meta.dims,
+           t: meta.t, full_dims: meta.full_dims,
+           iso_lo: meta.iso_lo, iso_hi: meta.iso_hi };
 }
 
 export class Viewer {
@@ -79,7 +85,7 @@ export class Viewer {
     this.stamp = null; // server setup fingerprint of the loaded solid
     this.settings = { field: "u", cmap: "turbo", thresh: 0.05,
                       pointSize: 3, showSolid: true, wake: false,
-                      sliceAxis: "", slicePos: 0.5 };
+                      sliceAxis: "", slicePos: 0.5, detail: "balanced" };
     this._raf = null;
     this._resize();
     new ResizeObserver(() => this._resize()).observe(container);
@@ -133,6 +139,7 @@ export class Viewer {
       this.caseName = name;
     }
     this.lastT = t;
+    const budget = DETAIL[this.settings.detail] || DETAIL.balanced;
     if (this.settings.showSolid) await this.ensureSolid();
     if (this.settings.field === "q") {
       if (this.points) { // Q mode: drop the point cloud
@@ -141,11 +148,11 @@ export class Viewer {
         this.points.material.dispose();
         this.points = null;
       }
-      const fq = await getQ(name, t);
+      const fq = await getQ(name, t, budget.qgrid);
       return this._buildIso(fq);
     }
     this._disposeIso();
-    const f = await getField(name, this.settings.field, t, 200000);
+    const f = await getField(name, this.settings.field, t, budget.points);
     this._buildPoints(f);
     this.frameInfo = `t=${f.t} · ${f.dims.join("×")}`;
     return this.frameInfo;
@@ -161,7 +168,8 @@ export class Viewer {
         this.solid.visible = true;
         return;
       }
-      const fl = await getField(this.caseName, "flags", this.lastT, 2000000);
+      const fl = await getField(this.caseName, "flags", this.lastT,
+                                (DETAIL[this.settings.detail] || DETAIL.balanced).solid);
       this._disposeSolid();
       this._buildSolid(fl);
       this.stamp = stamp;

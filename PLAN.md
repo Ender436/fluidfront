@@ -14,6 +14,8 @@
   this project → everything project-local: Python `venv` in `.venv/`, npm in
   `web/node_modules/`, engine pinned in `engine/`. If a genuine system
   dependency appears (e.g. an OpenCL driver component), ask before installing.
+- Repo is public: commit messages and code comments must not mention the
+  user, their machines/setup, or personal test details. Keep them generic.
 
 | Question | Decision |
 |---|---|
@@ -353,6 +355,17 @@ testing work everywhere.
   already-loaded field (no refetch, no server change): side/cross/flat cuts +
   position slider. Browser-verified: cross cut @50% -> 6k pts at flow
   0.49-0.51, @25% -> 0.235-0.255, flat cut wider, off restores full cloud.
+- **View detail control (user-facing fix).** Sim resolution previously
+  invisible in the view: the point cloud was hard-capped at 200k and Q always
+  on a 96³ cube, so high-resolution sims looked identical to standard ones.
+  Now a fast/balanced/sharp selector in the viewer sets per-fetch budgets
+  (points 100k/300k/1M, model voxels 0.5M/2M/4M, Q grid 64/96/128) and the
+  server honors them (cap raised 2M -> 4M). Added fmt=bin on /field and /q:
+  raw float32 body + JSON X-Meta header (~25% lighter than base64; client
+  uses arrayBuffer). Browser-verified: 119k/389k/939k points per level on a
+  25M-cell case, q?grid=128 -> MarchingCubes res 128, solid refetches at the
+  new voxel budget, no console errors; curl-verified byte-exact payloads and
+  the json fallback.
 - **Next: M6c** MP4/GIF export (canvas frame capture -> server ffmpeg via
   imageio-ffmpeg in .venv); then M6d results-report page/share. Queued:
   coarse-resolution Cd artifacts (M3 follow-up).

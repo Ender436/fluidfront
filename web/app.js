@@ -339,6 +339,11 @@ $("f-slice").onchange = () => {
 };
 $("f-slice-pos").oninput = () =>
   state.viewer?.setSettings({ slicePos: $("f-slice-pos").value / 100 });
+$("f-detail").onchange = () => {
+  state.viewer?.setSettings({ detail: $("f-detail").value });
+  if (state.viewer?.settings.showSolid) state.viewer.stamp = null; // rebuild model at new voxel budget
+  loadFrame(); // new budget => refetch at the new density
+};
 $("f-solid").onchange = async () => {
   const on = $("f-solid").checked;
   state.viewer?.setSettings({ showSolid: on }); // also just shows/hides it
