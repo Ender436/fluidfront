@@ -25,6 +25,35 @@ make check    # validation suite (trust layer)
 Then open **http://localhost:8123** — the wizard (import a model, pick a
 speed, run, watch the live 3D viewer) is served from the same port.
 
+## Windows (native, no reboot / no WSL)
+
+Prerequisites (one-time):
+- [Python 3.11+](https://python.org) and [Git for Windows](https://git-scm.com)
+- **Visual Studio 2022 Build Tools** with the *Desktop development with C++*
+  workload (this compiles the engine; the OpenCL headers/lib FluidX3D needs
+  are vendored, so nothing else to install) — https://visualstudio.microsoft.com/downloads/
+- normal NVIDIA/AMD/Intel GPU **drivers** (they include the OpenCL runtime)
+
+In PowerShell:
+
+```powershell
+git clone https://github.com/Ender436/fluidfront.git
+cd fluidfront
+git clone --branch v3.8 --depth 1 https://github.com/ProjectPhysX/FluidX3D.git engine/FluidX3D
+py -m venv .venv
+.venv\Scripts\activate
+pip install -e .
+python -m uvicorn fluidfront.server.app:app --port 8123
+```
+
+Open **http://localhost:8123**. The first simulation run compiles the engine
+automatically (MSBuild, ~1–2 min); afterwards everything behaves exactly like
+on Linux, including clean Ctrl+C shutdown (a running sim is killed with the
+server via a Windows Job Object, so the GPU is never left busy). Windows
+Defender may show a firewall prompt on first start — allowing it is only
+needed if you want the UI from another device; same-machine use works either
+way.
+
 ## API preview (M4 — the WebUI will use exactly this)
 
 ```

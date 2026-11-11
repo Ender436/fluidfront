@@ -307,6 +307,16 @@ testing work everywhere.
   uvicorn waits for live WS before app-shutdown). Plus prctl(PR_SET_PDEATHSIG)
   on the engine child so even a FORCE quit (double Ctrl+C) or a server crash
   can never orphan a GPU-hogging FluidX3D (verified by force-quit test).
+- **Native Windows support** (user picked native over WSL2 so no dual-boot
+  switching): build.py is OS-aware - Windows path locates MSBuild via vswhere
+  and builds the upstream FluidX3D.vcxproj (Release|x64 -> bin\FluidX3D.exe;
+  OpenCL headers+import lib are vendored in the engine, so the only prereq is
+  VS 2022 Build Tools C++ workload). runner.py: prctl guarded to posix,
+  Windows gets a Job Object with KILL_ON_CLOSE (same no-orphan guarantee);
+  stdout pipe uses errors="replace". README + engine/README document the
+  PowerShell flow. Linux regression: rebuilt engine + full create/run/quit
+  smoke passed. Windows side is UNTESTED (no Windows machine here) - expect
+  debug round-trips on the first desktop session.
 - **Next: M6** visualization polish; also run the full flow on the desktop 3090
   (clone there + `make engine setup serve`; bigger buffer cap -> higher tiers
   become usable, and its BENCH numbers are worth re-measuring live).
