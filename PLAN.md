@@ -317,6 +317,12 @@ testing work everywhere.
   PowerShell flow. Linux regression: rebuilt engine + full create/run/quit
   smoke passed. Windows side is UNTESTED (no Windows machine here) - expect
   debug round-trips on the first desktop session.
+- **Windows first-run fix** (user's desktop test): MSVC died with C2513 on
+  generated setup.cpp line 13 - our variable `OUT` collides with the Windows
+  SDK's `#define OUT` (SAL annotations via Windows.h, included by utilities.hpp);
+  g++ never sees that macro, hence Linux-only bug. Renamed to PREFIX (verified
+  repro with `g++ -DOUT=`; Linux rebuild + run smoke green). Rest of MSVC
+  build was clean - only lodepng warnings.
 - **Next: M6** visualization polish; also run the full flow on the desktop 3090
   (clone there + `make engine setup serve`; bigger buffer cap -> higher tiers
   become usable, and its BENCH numbers are worth re-measuring live).

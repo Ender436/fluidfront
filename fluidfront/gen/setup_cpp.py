@@ -70,7 +70,8 @@ void main_setup() {
     const ulong T_MAX = @@TMAX@@ull;
     const ulong DT_FORCE = @@DTF@@ull;
     const ulong DT_SNAP = @@DTS@@ull;
-    const string OUT = "@@OUT@@";
+    const string PREFIX = "@@OUT@@";  // NOT "OUT": Windows SDK (sal.h via
+    // Windows.h in utilities.hpp) #defines OUT to empty, breaking MSVC
     println("fluidfront: Re_lu = @@RELU@@, tau = @@TAU@@, cells = @@NCELLS@@ M");
 
     LBM lbm(@@CTOR@@);
@@ -86,7 +87,7 @@ void main_setup() {
 
     // ############## run + measurement loop ##############
     lbm.run(0ull, T_MAX); // initialize (uploads host flags/u to device)
-    lbm.flags.write_device_to_vtk(OUT); // geometry snapshot (once; engine appends "flags-<t>.vtk")
+    lbm.flags.write_device_to_vtk(PREFIX); // geometry snapshot (once; engine appends "flags-<t>.vtk")
 
     // projected body area normal to flow: count TYPE_X voxel columns
     double AREA = 0.0; {
@@ -99,7 +100,7 @@ void main_setup() {
     }
     println("fluidfront: projected area = " + to_string((float)AREA, 1u) + " LU^2");
 
-    std::ofstream forces(OUT + "forces.csv");
+    std::ofstream forces(PREFIX + "forces.csv");
     forces << "# t,fx,fy,fz,cd,cl\n";
     const double QDYN_A = 0.5 * (double)U0 * (double)U0 * AREA; // rho = 1 [LU]
 
@@ -118,7 +119,7 @@ void main_setup() {
 """
 
 SNAPSHOT_BLOCK = r"""        if(lbm.get_t() % DT_SNAP == 0ull || lbm.get_t() == T_MAX) { // incl. final frame
-@@RHO@@            lbm.u.write_device_to_vtk(OUT);
+@@RHO@@            lbm.u.write_device_to_vtk(PREFIX);
             double u_max = 0.0;
             parallel_for(lbm.get_N(), [&](ulong n) { u_max = fmax(u_max, (double)sqrt(sq(lbm.u.x[n]) + sq(lbm.u.y[n]) + sq(lbm.u.z[n]))); });
             println("fluidfront: snapshot t = " + to_string(lbm.get_t()) + ", u_max = " + to_string((float)u_max, 4u) + " LU");
@@ -220,7 +221,7 @@ def generate_setup(spec: CaseSpec) -> str:
         boundary = (f"        if(x==0u||x==NX-1u||y==0u||y==NY-1u{zface}) {{ lbm.flags[n] = TYPE_E; }}{ground}")
 
     # --- snapshots ----------------------------------------------------------
-    rho_line = '            lbm.rho.write_device_to_vtk(OUT);\n' if spec.run.get("write_rho") else ""
+    rho_line = '            lbm.rho.write_device_to_vtk(PREFIX);\n' if spec.run.get("write_rho") else ""
     snapshot = SNAPSHOT_BLOCK.replace("@@RHO@@", rho_line)
 
     force_every = int(spec.run.get("force_every", 25))
