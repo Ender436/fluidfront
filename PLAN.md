@@ -349,5 +349,10 @@ testing work everywhere.
   level in [geomean of strong positive Q, max] with honest "no resolved
   vortices in this frame" when Q never exceeds ~0. Browser-verified: build,
   threshold re-polygonize without refetch, time scrubbing, mode round-trips.
-- **Next: M6b** slice-plane view + MP4/GIF export; then M6c results-report
-  page/share. Queued: coarse-resolution Cd artifacts (M3 follow-up).
+- **M6b — slice planes.** Thin-band point filter on the client over the
+  already-loaded field (no refetch, no server change): side/cross/flat cuts +
+  position slider. Browser-verified: cross cut @50% -> 6k pts at flow
+  0.49-0.51, @25% -> 0.235-0.255, flat cut wider, off restores full cloud.
+- **Next: M6c** MP4/GIF export (canvas frame capture -> server ffmpeg via
+  imageio-ffmpeg in .venv); then M6d results-report page/share. Queued:
+  coarse-resolution Cd artifacts (M3 follow-up).

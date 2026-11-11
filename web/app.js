@@ -295,7 +295,7 @@ $("btn-results").onclick = () => show("results");
 
 $("f-which").onchange = async () => {
   const q = $("f-which").value === "q";
-  for (const id of ["l-cmap", "l-wake", "l-size"])
+  for (const id of ["l-cmap", "l-wake", "l-size", "l-slice"])
     $(id).classList.toggle("hidden", q);
   if (q && +$("f-thresh").value < 20) $("f-thresh").value = 45;
   state.viewer?.setSettings({ field: $("f-which").value,
@@ -333,6 +333,12 @@ function threshLabel() {
 }
 threshLabel();
 $("f-size").oninput = () => state.viewer?.setSettings({ pointSize: $("f-size").value });
+$("f-slice").onchange = () => {
+  $("f-slice-pos").disabled = $("f-slice").value === "";
+  state.viewer?.setSettings({ sliceAxis: $("f-slice").value });
+};
+$("f-slice-pos").oninput = () =>
+  state.viewer?.setSettings({ slicePos: $("f-slice-pos").value / 100 });
 $("f-solid").onchange = async () => {
   const on = $("f-solid").checked;
   state.viewer?.setSettings({ showSolid: on }); // also just shows/hides it

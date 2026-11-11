@@ -78,7 +78,8 @@ export class Viewer {
     this.qmeta = null; // {iso_lo, iso_hi} of the loaded Q grid
     this.stamp = null; // server setup fingerprint of the loaded solid
     this.settings = { field: "u", cmap: "turbo", thresh: 0.05,
-                      pointSize: 3, showSolid: true, wake: false };
+                      pointSize: 3, showSolid: true, wake: false,
+                      sliceAxis: "", slicePos: 0.5 };
     this._raf = null;
     this._resize();
     new ResizeObserver(() => this._resize()).observe(container);
@@ -259,9 +260,17 @@ export class Viewer {
       uRef = samp[samp.length >> 1] || vmax;
     }
     const cut = wake ? Math.max(1e-9, s.thresh * uRef) : 0;
+    // slice plane: keep a thin band of cells around one coordinate plane
+    const lim = s.sliceAxis === "x" ? nx : s.sliceAxis === "y" ? ny
+      : s.sliceAxis === "z" ? nz : -1;
+    const cutIdx = lim < 0 ? -1 : Math.min(lim - 1, Math.round(s.slicePos * (lim - 1)));
     for (let z = 0; z < nz; z++) {
       for (let y = 0; y < ny; y++) {
         for (let x = 0; x < nx; x++) {
+          if (cutIdx >= 0) {
+            const c = s.sliceAxis === "x" ? x : s.sliceAxis === "y" ? y : z;
+            if (Math.abs(c - cutIdx) > 1) continue;
+          }
           const i = (z * ny + y) * nx + x;
           let t; // colormap position 0..1
           if (wake) {
