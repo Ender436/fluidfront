@@ -102,19 +102,33 @@ def run_case(binary: Path, case_dir: Path, on_event: Callback | None = None,
         )
         job = _win_assign_kill_job(proc) if os.name == "nt" else None
         assert proc.stdout is not None
-        for line in proc.stdout:
-            if cancel is not None and cancel.is_set():
+        try:
+            for line in proc.stdout:
+                if cancel is not None and cancel.is_set():
+                    proc.terminate()
+                    break
+                line = line.rstrip("\r\n")
+                log.write(line + "\n")
+                log.flush()
+                if on_event:
+                    ev = parse_progress(line)
+                    if ev is None:
+                        ev = {"kind": "info", "line": line}
+                    try:
+                        on_event(ev)
+                    except Exception as e:  # noqa: BLE001 - UI callback must
+                        print(f"fluidfront: progress handler error: {e}",
+                              flush=True)  # never stop the solver
+            rc = proc.wait()
+        finally:
+            # any exception in the loop above (logging, progress, ...) must
+            # never orphan a solver that keeps burning the GPU
+            if proc.poll() is None:
                 proc.terminate()
-                break
-            line = line.rstrip("\r\n")
-            log.write(line + "\n")
-            log.flush()
-            if on_event:
-                ev = parse_progress(line)
-                if ev is None:
-                    ev = {"kind": "info", "line": line}
-                on_event(ev)
-        rc = proc.wait()
-        if job is not None:  # closing the job handle releases the kill-guard
-            ctypes.windll.kernel32.CloseHandle(job)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            if job is not None:  # closing the job handle releases the kill-guard
+                ctypes.windll.kernel32.CloseHandle(job)
     return rc

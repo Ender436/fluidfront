@@ -97,6 +97,7 @@ class JobManager:
         self._thread: threading.Thread | None = None
         self._subs: list[asyncio.Queue] = []
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._status: dict[str, dict] = {}   # live status cache (see read_status)
 
     # ----- WebSocket fan-out (events originate from the worker thread) ----
     def attach_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -121,25 +122,49 @@ class JobManager:
                 pass
 
     # ----- status.json -----------------------------------------------------
+    # Live status is kept in memory (self._status); status.json is only the
+    # restart-surviving copy. We must never read the file for a case we are
+    # actively tracking: on Windows, a concurrent reader handle makes the
+    # atomic tmp->rename fail with WinError 5 (Access is denied).
     def read_status(self, name: str) -> dict | None:
+        cached = self._status.get(name)
+        if cached is not None:
+            return dict(cached)
         p = CASES / name / "status.json"
         if not p.is_file():
             return None
         try:
             return json.loads(p.read_text())
-        except json.JSONDecodeError:
+        except json.JSONDecodeError:  # partial write caught mid-flight
             return None
 
     def write_status(self, name: str, **fields) -> dict:
-        p = CASES / name / "status.json"
         status = self.read_status(name) or {}
         status.update(fields)
         status["updated"] = _now()
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(status, indent=1))
-        tmp.replace(p)
+        self._status[name] = status
+        self._persist_status(name, status)
         self._broadcast({"kind": "status", "case": name, **status})
         return status
+
+    def _persist_status(self, name: str, status: dict) -> None:
+        """Best-effort disk copy; NEVER raises (a status hiccup must not
+        take down a running simulation)."""
+        p = CASES / name / "status.json"
+        data = json.dumps(status, indent=1)
+        try:  # atomic path (fine on Linux, usually fine on Windows too)
+            tmp = p.with_suffix(".json.tmp")
+            tmp.write_text(data)
+            tmp.replace(p)
+            return
+        except OSError:
+            pass  # Windows: rename onto a file a reader has open -> fallback
+        try:  # direct write is allowed alongside shared readers; readers
+              # tolerate a torn read (JSONDecodeError -> stale value)
+            p.write_text(data)
+        except OSError as e:
+            print(f"fluidfront: warning: could not persist status for "
+                  f"{name!r}: {e}", flush=True)
 
     # ----- listing / deletion ----------------------------------------------
     def list_cases(self) -> list[dict]:
@@ -164,6 +189,8 @@ class JobManager:
                 raise BusyError("case is running - stop it first")
         if self.read_status(name):
             (d / "status.json").unlink(missing_ok=True)
+        (d / "status.json.tmp").unlink(missing_ok=True)
+        self._status.pop(name, None)
         shutil.rmtree(d)
 
     # ----- run control ------------------------------------------------------

@@ -323,6 +323,17 @@ testing work everywhere.
   g++ never sees that macro, hence Linux-only bug. Renamed to PREFIX (verified
   repro with `g++ -DOUT=`; Linux rebuild + run smoke green). Rest of MSVC
   build was clean - only lodepng warnings.
+- **Windows status-lock fix** (user's desktop test #2): runs stalled/failed with
+  WinError 5 renaming status.json.tmp -> status.json. Windows refuses to rename
+  over a file another handle has open (the UI's status polling) - atomic-rename
+  idiom is Linux-only. One transient hiccup had killed the worker thread mid-run
+  AND orphaned the solver on the GPU. Fixes: (1) live status kept in memory,
+  file only for restart persistence, our own readers never touch it mid-write;
+  (2) persist = tmp+rename, on OSError fall back to direct write, never raise;
+  (3) run_case now try/finally-terminates the engine on ANY loop exception,
+  and progress-handler exceptions are logged, not fatal. Unit-tested the
+  WinError-5 simulation on Linux (patched Path.replace to throw) + real run
+  with exploding handler -> engine reaped, no orphan; full Linux smoke green.
 - **Next: M6** visualization polish; also run the full flow on the desktop 3090
   (clone there + `make engine setup serve`; bigger buffer cap -> higher tiers
   become usable, and its BENCH numbers are worth re-measuring live).
