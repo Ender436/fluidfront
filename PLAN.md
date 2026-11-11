@@ -366,6 +366,14 @@ testing work everywhere.
   25M-cell case, q?grid=128 -> MarchingCubes res 128, solid refetches at the
   new voxel budget, no console errors; curl-verified byte-exact payloads and
   the json fallback.
+- **Point-cloud depth fix (view-from-below artifact).** The flow cloud was
+  rendered transparent, opacity 0.9, depthWrite:false, unsorted: three.js
+  drew it in buffer order, and the server's scan puts the topmost layer last,
+  so that shell overwrote everything - from below the near and inner points
+  were painted over, showing the far (top) shell. Cloud is now opaque +
+  depth-tested, so the camera-facing shell wins from every angle. Verified
+  A/B in-browser by pixel sampling (below-view changes with the fix, above
+  view unchanged; iso/solid depth behavior unaffected).
 - **Next: M6c** MP4/GIF export (canvas frame capture -> server ffmpeg via
   imageio-ffmpeg in .venv); then M6d results-report page/share. Queued:
   coarse-resolution Cd artifacts (M3 follow-up).

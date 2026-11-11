@@ -299,9 +299,11 @@ export class Viewer {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos.subarray(0, w * 3), 3));
     g.setAttribute("color", new THREE.BufferAttribute(col.subarray(0, w * 3), 3));
+    // opaque + depth-tested: nearest points win, so the cloud shows the shell
+    // facing the camera from every angle (semi-transparent without sorting
+    // would show the last-drawn = topmost layer instead, e.g. from below)
     const m = new THREE.PointsMaterial({ size: s.pointSize * 0.004,
-      vertexColors: true, sizeAttenuation: true, transparent: true,
-      opacity: 0.9, depthWrite: false });
+      vertexColors: true, sizeAttenuation: true });
     this.points = new THREE.Points(g, m);
     this.scene.add(this.points);
     this.raw = f;
