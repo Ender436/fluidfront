@@ -1,9 +1,11 @@
-// Live flow viewer: velocity/density fields as a GPU point cloud plus the
-// solid model rendered from the engine's flags snapshot. Data comes from
-// GET /api/cases/{name}/field (downsampled float32 on the server).
+// Live flow viewer: velocity/density fields as a GPU point cloud, the solid
+// model rendered from the engine's flags snapshot, and Q-criterion vortex
+// iso-surfaces. Data comes from GET /api/cases/{name}/field and /q
+// (downsampled float32 on the server).
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { MarchingCubes } from "three/addons/objects/MarchingCubes.js";
 
 // ---- colormaps (same 5-stop idea as common scientific maps) --------------
 const CMAPS = {
@@ -42,6 +44,19 @@ async function getStamp(name) {
   return (await r.json()).stamp;
 }
 
+async function getQ(name, t) {
+  const p = new URLSearchParams({ grid: "96" });
+  if (t !== null && t !== undefined) p.set("t", String(t));
+  const r = await fetch(`/api/cases/${name}/q?${p}`);
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  const j = await r.json();
+  const bin = atob(j.data_b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return { q: new Float32Array(buf.buffer), dims: j.dims, t: j.t,
+           full_dims: j.full_dims, iso_lo: j.iso_lo, iso_hi: j.iso_hi };
+}
+
 export class Viewer {
   constructor(container) {
     this.box = container;
@@ -59,6 +74,8 @@ export class Viewer {
 
     this.points = null;
     this.solid = null;
+    this.iso = null; // MarchingCubes vortex surface (field === "q")
+    this.qmeta = null; // {iso_lo, iso_hi} of the loaded Q grid
     this.stamp = null; // server setup fingerprint of the loaded solid
     this.settings = { field: "u", cmap: "turbo", thresh: 0.05,
                       pointSize: 3, showSolid: true, wake: false };
@@ -83,13 +100,13 @@ export class Viewer {
   }
 
   _clearMeshes() {
-    for (const obj of [this.points, this.solid]) {
+    for (const obj of [this.points, this.solid, this.iso]) {
       if (!obj) continue;
       this.scene.remove(obj);
       obj.geometry.dispose();
       obj.material.dispose();
     }
-    this.points = this.solid = null;
+    this.points = this.solid = this.iso = null;
   }
 
   _disposeSolid() {
@@ -116,6 +133,17 @@ export class Viewer {
     }
     this.lastT = t;
     if (this.settings.showSolid) await this.ensureSolid();
+    if (this.settings.field === "q") {
+      if (this.points) { // Q mode: drop the point cloud
+        this.scene.remove(this.points);
+        this.points.geometry.dispose();
+        this.points.material.dispose();
+        this.points = null;
+      }
+      const fq = await getQ(name, t);
+      return this._buildIso(fq);
+    }
+    this._disposeIso();
     const f = await getField(name, this.settings.field, t, 200000);
     this._buildPoints(f);
     this.frameInfo = `t=${f.t} · ${f.dims.join("×")}`;
@@ -140,6 +168,11 @@ export class Viewer {
   }
 
   refresh() {
+    if (this.settings.field === "q" && this.iso) {
+      this.iso.isolation = this._isoLevel(); // threshold slider: re-polygonize
+      this.iso.update();                     // (no refetch)
+      return;
+    }
     if (this.raw) this._buildPoints(this.raw); // recolor with new settings
   }
 
@@ -258,9 +291,58 @@ export class Viewer {
     this._syncUnits();
   }
 
+  _disposeIso() {
+    if (!this.iso) return;
+    this.scene.remove(this.iso);
+    this.iso.geometry.dispose();
+    this.iso.material.dispose();
+    this.iso = null;
+  }
+
+  // Q-criterion iso-surface from the server's uniform Q grid (see
+  // fluidfront/qcriterion.py). MarchingCubes' field layout (x fastest, then
+  // y, z) matches the server array exactly, so we can bulk-load it.
+  _buildIso(fq) {
+    this._disposeIso();
+    this.isoDims = fq.full_dims;
+    this.qmeta = fq;
+    if (!(fq.iso_hi > 0)) { // honest: nothing resolved as swirling in this frame
+      this.frameInfo = `t=${fq.t} · no resolved vortices in this frame`;
+      return this.frameInfo;
+    }
+    const N = fq.dims[0];
+    const mc = new MarchingCubes(N,
+      new THREE.MeshNormalMaterial({ side: THREE.DoubleSide }),
+      false, false, 40000); // constructor calls init(N) itself - do not re-init
+    mc.field.set(fq.q);
+    mc.isolation = this._isoLevel();
+    mc.update();
+    // engine axes -> three.js (same cyclic map as _pt): local x->world z,
+    // local y->world x, local z->world y = -120 deg about (1,1,1)
+    mc.setRotationFromAxisAngle(new THREE.Vector3(1, 1, 1).normalize(),
+                                -2 * Math.PI / 3);
+    const [nx, ny, nz] = fq.full_dims, s = Math.max(nx, ny, nz);
+    mc.scale.set(nx / (2 * s), ny / (2 * s), nz / (2 * s));
+    mc.position.set(ny / (2 * s), nz / (2 * s), nx / (2 * s));
+    this.iso = mc;
+    this.scene.add(mc);
+    this._syncUnits();
+    this.frameInfo = `t=${fq.t} · Q iso ${Math.round(this.isoValue)} 1/s²`;
+    return this.frameInfo;
+  }
+
+  // threshold slider (0..0.9) -> log scale between the frame's typical (iso_lo,
+  // geometric mean of positive Q) and max vortex strength (iso_hi)
+  _isoLevel() {
+    const m = this.qmeta;
+    const k = Math.min(1, Math.max(0, this.settings.thresh / 0.9));
+    this.isoValue = m.iso_lo * Math.pow(m.iso_hi / m.iso_lo, k);
+    return this.isoValue;
+  }
+
   _syncUnits() {
     // aim at the model (engine center: x=0.5·nx, y≈0.33·ny, z=0.5·nz)
-    const dims = this.raw?.dims;
+    const dims = this.raw?.dims || this.isoDims;
     if (dims) {
       const [nx, ny, nz] = dims, s = Math.max(nx, ny, nz);
       this.controls.target.set(0.33 * ny / s, 0.5 * nz / s, 0.5 * nx / s);

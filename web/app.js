@@ -237,10 +237,10 @@ async function resultsScreen() {
   if (!name) return;
   if (!state.viewer) { state.viewer = new Viewer($("viewer")); window.__viewer = state.viewer; }
 
-  // snapshots -> time selector
+  // snapshots -> time selector (Q view rides the velocity snapshots)
   try {
     state.snapSel[name] = await api(`/api/cases/${name}/snapshots`);
-    const snaps = state.snapSel[name][$("f-which").value] || [];
+    const snaps = state.snapSel[name][snapKey()] || [];
     const sel = $("f-time");
     sel.innerHTML = snaps.map(t => `<option value="${t}">${t}</option>`).reverse().join("");
     if (snaps.length) sel.value = String(snaps[snaps.length - 1]);
@@ -294,12 +294,18 @@ $("btn-stop").onclick = () => api(`/api/cases/${state.current}/stop`, { method: 
 $("btn-results").onclick = () => show("results");
 
 $("f-which").onchange = async () => {
-  state.viewer?.setSettings({ field: $("f-which").value });
+  const q = $("f-which").value === "q";
+  for (const id of ["l-cmap", "l-wake", "l-size"])
+    $(id).classList.toggle("hidden", q);
+  if (q && +$("f-thresh").value < 20) $("f-thresh").value = 45;
+  state.viewer?.setSettings({ field: $("f-which").value,
+                              thresh: $("f-thresh").value / 100 });
   threshLabel();
-  const snaps = (state.snapSel[state.current] || {})[$("f-which").value] || [];
+  const snaps = (state.snapSel[state.current] || {})[snapKey()] || [];
   $("f-time").innerHTML = snaps.map(t => `<option value="${t}">${t}</option>`).reverse().join("");
   loadFrame();
 };
+const snapKey = () => $("f-which").value === "q" ? "u" : $("f-which").value;
 $("f-cmap").onchange = () => state.viewer?.setSettings({ cmap: $("f-cmap").value });
 $("f-thresh").oninput = () => {
   state.viewer?.setSettings({ thresh: $("f-thresh").value / 100 });
@@ -314,6 +320,12 @@ $("f-wake").onchange = () => {
 };
 function threshLabel() {
   const v = $("f-thresh").value;
+  if ($("f-which").value === "q") {
+    const iso = state.viewer?.isoValue;
+    $("thresh-lab").textContent = iso ? `eddies ≥${Math.round(iso)}/s²`
+                                      : "vortex strength";
+    return;
+  }
   $("thresh-lab").textContent =
     $("f-which").value !== "u" ? `hide calm (<${v}%)`
     : $("f-wake").checked ? `keep wake (<${v}% inflow)`

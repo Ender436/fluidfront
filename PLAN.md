@@ -339,6 +339,15 @@ testing work everywhere.
   GB/s, driver single-buffer cap 6143 MB (vs 955 MB laptop -> much bigger
   cases unlocked). BENCH.md now has real measured 3090 numbers; time-estimate
   calibration updated 10732 -> 9700 (measured steady state, not 256^3 peak).
-- **Next: M6** visualization polish; also run the full flow on the desktop 3090
-  (clone there + `make engine setup serve`; bigger buffer cap -> higher tiers
-  become usable, and its BENCH numbers are worth re-measuring live).
+- **M6a — Q-criterion vortex iso-surfaces.** Server computes Q = ½(|Ω|²−|S|²)
+  from the physical-unit u snapshot (fluidfront/qcriterion.py: central diffs,
+  body-masked via flags, decimated + trilinear-resampled to a 96³ cube;
+  ~1.2 s for a 25M-cell frame). Endpoint /api/cases/{name}/q; client renders
+  via vendored three.js r170 MarchingCubes (mc.field bulk-load: layout matches
+  x-fastest exactly). Unit-tested against analytic fields (rigid rotation →
+  Q=+ω², shear/strain → Q≤0) — caught a sign error there. Slider = log iso
+  level in [geomean of strong positive Q, max] with honest "no resolved
+  vortices in this frame" when Q never exceeds ~0. Browser-verified: build,
+  threshold re-polygonize without refetch, time scrubbing, mode round-trips.
+- **Next: M6b** slice-plane view + MP4/GIF export; then M6c results-report
+  page/share. Queued: coarse-resolution Cd artifacts (M3 follow-up).

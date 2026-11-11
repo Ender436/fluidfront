@@ -8,7 +8,8 @@
 <script type="importmap">
 {"imports": {
   "three": "/vendor/three.module.js",
-  "three/addons/controls/OrbitControls.js": "/vendor/OrbitControls.js"
+  "three/addons/controls/OrbitControls.js": "/vendor/OrbitControls.js",
+  "three/addons/objects/MarchingCubes.js": "/vendor/MarchingCubes.js"
 }}
 </script>
 </head>
@@ -124,9 +125,10 @@
           <label>field
             <select id="f-which">
               <option value="u">velocity</option>
+              <option value="q">vortices (Q)</option>
               <option value="rho">density</option>
             </select></label>
-          <label>colormap
+          <label id="l-cmap">colormap
             <select id="f-cmap">
               <option value="turbo">turbo</option>
               <option value="viridis">viridis</option>
@@ -134,9 +136,9 @@
             </select></label>
           <label><span id="thresh-lab">hide slow</span>
             <input type="range" id="f-thresh" min="0" max="90" value="5"></label>
-          <label title="velocity view: keep only the flow slowed down around and behind the model">hide fast flow
+          <label id="l-wake" title="velocity view: keep only the flow slowed down around and behind the model">hide fast flow
             <input type="checkbox" id="f-wake"></label>
-          <label>point size
+          <label id="l-size">point size
             <input type="range" id="f-size" min="1" max="10" value="3"></label>
           <label>model
             <input type="checkbox" id="f-solid" checked></label>

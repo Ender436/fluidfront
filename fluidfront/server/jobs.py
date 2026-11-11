@@ -302,6 +302,31 @@ def snapshots(name: str) -> dict[str, list[int]]:
     return {k: sorted(v) for k, v in res.items()}
 
 
+def _pick_vtk(out_dir: Path, which: str, t: int | None, name: str = "") -> Path:
+    """Latest `which-*.vtk` snapshot at step <= t."""
+    files = sorted(out_dir.glob(f"{which}-*.vtk"))
+    if not files:
+        raise NotFound(f"no '{which}' snapshots for case {name!r}")
+    if t is not None:
+        files = [f for f in files
+                 if int(f.stem.rpartition("-")[2]) <= t] or files[:1]
+    return files[-1]
+
+
+def read_q(name: str, t: int | None = None, grid: int = 96):
+    """Q-criterion vortex grid for the viewer (see fluidfront.qcriterion)."""
+    from ..qcriterion import q_criterion
+    out_dir = case_dir(name) / "output"
+    u = _pick_vtk(out_dir, "u", t, name)
+    t_actual = int(u.stem.rpartition("-")[2])
+    try:
+        fl = _pick_vtk(out_dir, "flags", t, name)
+    except NotFound:
+        fl = None
+    res = q_criterion(u, fl, grid=grid)
+    return res, t_actual
+
+
 def read_field(name: str, which: str = "u", t: int | None = None,
                max_points: int = 200_000):
     """Latest snapshot of `which` at step <= t, downsampled.
@@ -312,13 +337,7 @@ def read_field(name: str, which: str = "u", t: int | None = None,
     import numpy as np
     from ..vtkio import load_vtk
     out_dir = case_dir(name) / "output"
-    files = sorted(out_dir.glob(f"{which}-*.vtk"))
-    if not files:
-        raise NotFound(f"no '{which}' snapshots for case {name!r}")
-    if t is not None:
-        files = [f for f in files
-                 if int(f.stem.rpartition("-")[2]) <= t] or files[:1]
-    snap = load_vtk(files[-1])
+    snap = load_vtk(_pick_vtk(out_dir, which, t, name))
     field = snap["field"].astype(np.float32)
     ncomp, nz, ny, nx = field.shape
     n = nx * ny * nz
@@ -326,5 +345,5 @@ def read_field(name: str, which: str = "u", t: int | None = None,
         stride = max(2, round((n / max_points) ** (1 / 3)))
         field = field[:, ::stride, ::stride, ::stride]
         nz, ny, nx = field.shape[1:]
-    t_actual = int(files[-1].stem.rpartition("-")[2])
+    t_actual = int(snap["t"])
     return np.ascontiguousarray(field), [nx, ny, nz, ncomp, t_actual]

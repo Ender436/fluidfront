@@ -26,7 +26,7 @@ from ..geometry.loaders import GeometryError
 from ..geometry.pipeline import build_tunnel_case
 from .jobs import (CASES, BusyError, JobManager, NotFound, case_dir,
                    device_info, estimated_seconds, read_field, read_forces,
-                   snapshots)
+                   read_q, snapshots)
 
 
 @asynccontextmanager
@@ -224,6 +224,23 @@ def stamp(name: str) -> dict:
     (new rotation / quality), so the viewer knows to rebuild the model."""
     src = case_dir(name) / "gen" / "setup.cpp"
     return {"stamp": int(src.stat().st_mtime)}
+
+
+@app.get("/api/cases/{name}/q")
+def q_field(name: str, t: int | None = None, grid: int = 96) -> dict:
+    """Q-criterion vortex grid (uniform cube, physical 1/s^2) for the
+    iso-surface view. iso_lo/iso_hi bracket the slider's iso-level range."""
+    try:
+        res, t_actual = read_q(name, t, grid=max(32, min(128, grid)))
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"dims": list(res["dims"]), "full_dims": list(res["full_dims"]),
+            "t": t_actual,
+            "iso_lo": res["iso_lo"], "iso_hi": res["iso_hi"],
+            "dtype": "float32-le",
+            "data_b64": base64.b64encode(res["q"].tobytes()).decode()}
 
 
 # ------------------------------------------------------------------- events -
