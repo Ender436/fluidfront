@@ -109,7 +109,11 @@ void main_setup() {
         lbm.run(dt, T_MAX);
         const float3 F = lbm.object_force(TYPE_S|TYPE_X);
         double cd = 0.0, cl = 0.0;
-        if(QDYN_A > 0.0) { cd = F.y / QDYN_A; cl = F.x / QDYN_A; }
+        // drag is along the flow (+y). Lift is vertical (+z) in 3D; a D2Q9
+        // (nz=1) slice has no vertical force, so there the lateral force is
+        // the shed-vortex lift signal (used by the cylinder validation).
+        const double lift = (NZ == 1u) ? (double)F.x : (double)F.z;
+        if(QDYN_A > 0.0) { cd = F.y / QDYN_A; cl = lift / QDYN_A; }
         forces << lbm.get_t() << "," << F.x << "," << F.y << "," << F.z << ","
                << cd << "," << cl << "\n" << std::flush;
 @@SNAPSHOT@@
@@ -146,7 +150,7 @@ GEO_SNIPPETS = {
             lbm.flags[n] = TYPE_S;
         }""",
     "none": """        lbm.u.y[n] = U0;""",
-    "stl": """        if(lbm.flags[n] != TYPE_S) {
+    "stl": """        if(!(lbm.flags[n] & TYPE_S)) {
             lbm.u.y[n] = U0;
         }""",
 }

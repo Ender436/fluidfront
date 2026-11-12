@@ -17,6 +17,7 @@ Mirrors FluidX3D v3.8 `units.set_m_kg_s()` conventions:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 # Simple fluid tables at ~20 C, 1 atm (fine for hobby aero; refine later).
@@ -74,12 +75,16 @@ def derive(case: dict) -> Derived:
 
     size_lu = float(geom["size_lu"])
     u_lu = float(flow.get("u_lu", U_LU_DEFAULT_TUNNEL))
+    if not math.isfinite(size_lu) or size_lu <= 0:
+        raise CaseError(f"geometry.size_lu must be a positive number, got {size_lu}")
+    if not math.isfinite(u_lu) or u_lu <= 0:
+        raise CaseError(f"flow.u_lu must be a positive number, got {u_lu}")
     mode = str(flow.get("mode", "tunnel"))
 
     if mode == "volume_force":
         # Pressure-driven channel (validation): nu from tau knob, no Re input.
         tau = float(flow.get("tau", 1.0))
-        if not 0.501 < tau < 2.0:
+        if not math.isfinite(tau) or not 0.501 < tau < 2.0:
             raise CaseError(f"tau={tau} outside (0.501, 2.0)")
         nu_lu = (tau - 0.5) / 3.0
         re_si = size_lu * u_lu / nu_si * 0.0  # meaningless here; keep 0
@@ -90,8 +95,9 @@ def derive(case: dict) -> Derived:
     else:
         u_si = float(flow["u_si"])
         length_si = float(flow["length_si"])  # physical reference length (model size)
-        if u_si <= 0 or length_si <= 0:
-            raise CaseError("u_si and length_si must be positive")
+        if (not math.isfinite(u_si) or not math.isfinite(length_si)
+                or u_si <= 0 or length_si <= 0):
+            raise CaseError("u_si and length_si must be finite positive numbers")
         re_si = u_si * length_si / nu_si
         # exact Re similarity: nu_lu = u_lu * size_lu / Re
         nu_lu = u_lu * size_lu / re_si
@@ -141,8 +147,9 @@ def derive(case: dict) -> Derived:
                 "inviscid for plain SRT; enabling Smagorinsky LES (subgrid) model")
     if tau > TAU_SAFE_MAX:
         d.warnings.append(
-            f"tau={tau:.3f} very high (over-diffusive): model will look "
-            "artificially viscous; lower speed or raise resolution")
+            f"tau={tau:.3f} very high (over-diffusive): the flow will look "
+            "artificially viscous; raise the flow speed or use a coarser "
+            "model resolution")
     if u_lu > U_LU_MAX:
         raise CaseError(f"u_lu={u_lu} exceeds stability limit {U_LU_MAX}")
     if u_lu > U_LU_WARN:

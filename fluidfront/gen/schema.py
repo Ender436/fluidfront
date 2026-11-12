@@ -105,8 +105,12 @@ def load_case(case_dir: Path) -> CaseSpec:
     if nz == 1 and vsel != "d2q9":
         raise CaseError("nz == 1 (2D case) requires velocity_set d2q9")
     subgrid_model = str(opts.get("subgrid_model", "smagorinsky")).lower()
-    if subgrid_model not in ("smagorinsky", "gbm"):
-        raise CaseError(f"options.subgrid_model {subgrid_model!r} not in ['smagorinsky', 'gbm']")
+    if subgrid_model != "smagorinsky":
+        # The pinned FluidX3D v3.8 tree only ships the Smagorinsky-Lilly LES
+        # kernel; accepting other names here would silently run a different
+        # model than the case file claims.
+        raise CaseError(f"options.subgrid_model {subgrid_model!r} is not "
+                        "available in the pinned engine (use 'smagorinsky')")
     cs = float(opts.get("smagorinsky_const", 0.1))
     if not 0.01 <= cs <= 0.5:
         raise CaseError(f"options.smagorinsky_const {cs} out of sane range [0.01, 0.5]")
@@ -118,7 +122,11 @@ def load_case(case_dir: Path) -> CaseSpec:
 
     run = raw["run"]
     force_every = int(run.get("force_every", 25))
+    if force_every < 1:
+        raise CaseError("run.force_every must be >= 1")
     snap_every = int(run.get("snapshot_every", max(5 * force_every, 100)))
+    if snap_every < 1:
+        raise CaseError("run.snapshot_every must be >= 1")
     if snap_every % force_every:
         snap_every = ((snap_every // force_every) + 1) * force_every
     # write normalized values back: the generator must use THESE, or snapshot

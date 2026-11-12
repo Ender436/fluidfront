@@ -168,6 +168,9 @@ function initForm() {
 
 function showReport(res) {
   state.current = res.name;
+  // the WS "created" event may still be in flight; make the Run screen work
+  // immediately after a create (it looks the case up in this map)
+  state.cases.set(res.name, { name: res.name, state: "created", percent: 0 });
   $("report").classList.remove("hidden");
   $("rpt-name").textContent = res.name;
   const rep = res.report, d = res.derived;
@@ -268,12 +271,16 @@ async function loadForces() {
   try {
     const f = await api(`/api/cases/${name}/forces`);
     const stats = plot($("chart"), f);
-    const tail = stats?.cd_tail, spread = stats?.cd_spread;
-    const noisy = spread !== null && spread > 0.1 * Math.max(0.1, Math.abs(tail));
+    // fewer than two force samples -> plot() returns null; don't try to call
+    // .toFixed() on undefined while a run has just started
+    const tail = stats && Number.isFinite(stats.cd_tail) ? stats.cd_tail : null;
+    const spread = stats && Number.isFinite(stats.cd_spread) ? stats.cd_spread : null;
+    const noisy = tail !== null && spread !== null &&
+      spread > 0.1 * Math.max(0.1, Math.abs(tail));
     facts($("resfacts"), [
       [tail !== null ? (noisy ? `${tail.toFixed(2)} ± ${spread.toFixed(2)}`
                               : tail.toFixed(3)) : "—", "Cd (last third avg)"],
-      [f.t.length, "force samples"],
+      [(f.t || []).length, "force samples"],
     ]);
     if (noisy) {
       $("resfacts").innerHTML += `<div class="fact"><span>The wake is still
@@ -290,7 +297,15 @@ for (const b of document.querySelectorAll("#steps button"))
   b.onclick = () => show(b.dataset.screen);
 $("btn-new").onclick = () => show("new");
 $("btn-run").onclick = doRun;
-$("btn-stop").onclick = () => api(`/api/cases/${state.current}/stop`, { method: "POST" });
+$("btn-stop").onclick = async () => {
+  try {
+    await api(`/api/cases/${state.current}/stop`, { method: "POST" });
+  } catch (e) {
+    const err = $("runerr");
+    err.textContent = e.message;
+    err.classList.remove("hidden");
+  }
+};
 $("btn-results").onclick = () => show("results");
 
 $("f-which").onchange = async () => {
@@ -341,7 +356,7 @@ $("f-slice-pos").oninput = () =>
   state.viewer?.setSettings({ slicePos: $("f-slice-pos").value / 100 });
 $("f-detail").onchange = () => {
   state.viewer?.setSettings({ detail: $("f-detail").value });
-  if (state.viewer?.settings.showSolid) state.viewer.stamp = null; // rebuild model at new voxel budget
+  if (state.viewer) state.viewer.stamp = null; // rebuild model at new voxel budget
   loadFrame(); // new budget => refetch at the new density
 };
 $("f-solid").onchange = async () => {

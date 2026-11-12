@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import re
 import shutil
 from contextlib import asynccontextmanager
@@ -86,6 +87,30 @@ async def create_case(
     if scale_si is None:
         raise HTTPException(status_code=422,
                             detail=f"model_units {model_units!r} not in m/cm/mm/in")
+    if tier not in ("preview", "standard", "detailed"):
+        raise HTTPException(status_code=422,
+                            detail=f"tier {tier!r} not in preview/standard/detailed")
+    if precision not in ("fp32", "fp16s", "fp16c"):
+        raise HTTPException(status_code=422,
+                            detail=f"precision {precision!r} not in fp32/fp16s/fp16c")
+    if not math.isfinite(u_si) or u_si <= 0:
+        raise HTTPException(status_code=422,
+                            detail="flow speed must be a positive number")
+    if size_lu < 0:
+        raise HTTPException(status_code=422,
+                            detail="voxels across the model cannot be negative")
+    if 0 < size_lu < 16:
+        raise HTTPException(status_code=422,
+                            detail="voxels across the model must be 0 (quality "
+                                   "tier) or at least 16")
+    try:
+        rot = tuple(float(v) for v in rotation_deg.replace(";", ",").split(","))
+        if len(rot) != 3 or not all(math.isfinite(v) for v in rot):
+            raise ValueError
+    except ValueError:
+        raise HTTPException(status_code=422,
+                            detail="rotation_deg must be three finite numbers, "
+                                   "e.g. '90,0,0'")
     stem = Path(model.filename or "model").stem
     cname = _safe_name(name or stem)
     cdir = CASES / cname
@@ -95,13 +120,16 @@ async def create_case(
     upload.write_bytes(await model.read())
 
     dev = device_info()
-    # cap the mesh so it fits in ~75% of free VRAM (FP16S D3Q19 ~55 B/cell),
-    # AND inside one OpenCL buffer (driver max-memory-allocation cap; measured
-    # 955 MB single buffer on a 4 GB card -> the binding limit, not VRAM)
-    max_cells = min(int(dev["free_mi"] * 0.75 * 1024 * 1024 // 55),
-                    int(dev["maxbuf_mi"] * 0.90 * 1024 * 1024 // 38))
+    # cap the mesh so it fits in ~75% of free VRAM, AND inside one OpenCL
+    # buffer (driver max-memory-allocation cap; measured 955 MB single buffer
+    # on a 4 GB card -> the binding limit, not VRAM). FP32 DDFs are twice the
+    # size of FP16S, so the per-cell numbers differ by precision.
+    total_bpc, buf_bpc = {"fp32": (93, 76), "fp16s": (55, 38),
+                          "fp16c": (55, 38)}[precision]
+    mib = 1024 * 1024
+    max_cells = max(1, min(int(dev["free_mi"] * 0.75 * mib // total_bpc),
+                           int(dev["maxbuf_mi"] * 0.90 * mib // buf_bpc)))
     try:
-        rot = tuple(float(v) for v in rotation_deg.replace(";", ",").split(","))
         case, report = build_tunnel_case(
             upload, cdir, u_si=u_si, tier=tier, fluid=fluid, rotation_deg=rot,
             size_lu=size_lu or None, max_cells=max_cells,
@@ -210,9 +238,13 @@ def snapshot_list(name: str) -> dict:
 def field(name: str, which: str = "u", t: int | None = None,
           max_points: int = 200_000, fmt: str = "json"):
     try:
-        arr, meta = read_field(name, which, t, max_points=min(max_points, 4_000_000))
+        arr, meta = read_field(name, which, t,
+                               max_points=max(1, min(max_points, 4_000_000)))
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:  # snapshot still being written / corrupt
+        raise HTTPException(status_code=503,
+                            detail=f"snapshot not readable yet: {e}")
     nx, ny, nz, ncomp, t_actual = meta
     info = {"which": which, "dims": [nx, ny, nz], "ncomp": ncomp,
             "t": t_actual, "dtype": "float32-le"}
@@ -227,8 +259,11 @@ def field(name: str, which: str = "u", t: int | None = None,
 def stamp(name: str) -> dict:
     """Cheap identity of a case's setup: changes whenever it is re-created
     (new rotation / quality), so the viewer knows to rebuild the model."""
-    src = case_dir(name) / "gen" / "setup.cpp"
-    return {"stamp": int(src.stat().st_mtime)}
+    try:
+        src = case_dir(name) / "gen" / "setup.cpp"
+    except NotFound:
+        raise HTTPException(status_code=404, detail=f"no such case: {name!r}")
+    return {"stamp": int(src.stat().st_mtime) if src.is_file() else 0}
 
 
 @app.get("/api/cases/{name}/q")
@@ -240,8 +275,9 @@ def q_field(name: str, t: int | None = None, grid: int = 96,
         res, t_actual = read_q(name, t, grid=max(32, min(128, grid)))
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:  # snapshot still being written / corrupt
+        raise HTTPException(status_code=503,
+                            detail=f"snapshot not readable yet: {e}")
     info = {"dims": list(res["dims"]), "full_dims": list(res["full_dims"]),
             "t": t_actual,
             "iso_lo": res["iso_lo"], "iso_hi": res["iso_hi"],

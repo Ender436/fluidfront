@@ -74,6 +74,10 @@ def build_tunnel_case(model_path: Path | str, case_dir: Path | str, *,
     u_lu = 0.1
     t_steps = int(round(4.0 * ny / u_lu / 500.0) * 500)  # ~4 flow-throughs
     force_every = min(50, max(10, t_steps // 400))
+    # snapshots must land on force-write steps (t is only ever a multiple of
+    # force_every) or the engine never writes a field snapshot
+    snapshot_every = max(1000, t_steps // 8)
+    snapshot_every = -(-snapshot_every // force_every) * force_every
 
     case = {
         "name": case_dir.name,
@@ -90,7 +94,7 @@ def build_tunnel_case(model_path: Path | str, case_dir: Path | str, *,
                  "length_si": float(length_si), "u_lu": u_lu},
         "options": {"velocity_set": "d3q19", "precision": precision},
         "run": {"t_steps": t_steps, "force_every": force_every,
-                "snapshot_every": max(1000, t_steps // 8), "write_rho": True},
+                "snapshot_every": snapshot_every, "write_rho": True},
     }
     report = {"warnings": warnings, "stats": insp["stats"], "layout": lay,
               "blockage": lay.blockage}

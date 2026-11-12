@@ -51,7 +51,12 @@ def q_criterion(u_vtk: Path, flags_vtk: Path | None = None,
     # Q = -1/2 tr(G*G) with G = grad(u), expanded:
     # Q = -( sum_{i<j} g_ij*g_ji + 1/2*sum_i g_ii^2 )
     # e.g. solid rotation (+/-w): Q = +w^2; pure shear: Q = 0.
-    q = -(du[1] * dv[2] + du[2] * dw[1] + dv[2] * dw[0]
+    # np.gradient returns [d/dz, d/dy, d/dx], so the off-diagonal pairs are
+    # g_xy*g_yx = du[1]*dv[2], g_xz*g_zx = du[0]*dw[2],
+    # g_yz*g_zy = dv[0]*dw[1]. (Mixing in the diagonal terms here silently
+    # drops vortices whose axis is not z - e.g. the streamwise wake vortices
+    # that dominate a wind-tunnel view.)
+    q = -(du[1] * dv[2] + du[0] * dw[2] + dv[0] * dw[1]
           + 0.5 * (du[2] * du[2] + dv[1] * dv[1] + dw[0] * dw[0]))
     del du, dv, dw
 

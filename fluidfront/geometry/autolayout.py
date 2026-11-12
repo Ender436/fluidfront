@@ -57,23 +57,37 @@ def fit_tunnel(bbox_dims_si, tier: str = "standard",
     lat_max = max(dx, dz)
 
     notes: list[str] = []
-    original_size_lu = size_lu
-    for _ in range(4):
-        scale = size_lu / longest            # voxels per meter
+    original_size_lu = int(size_lu)
+    size_lu = max(16, original_size_lu)
+
+    def dims_for(sl: int):
+        scale = sl / longest                 # voxels per meter
         lat_lu = lat_max * scale
         stream_lu = dy * scale
         # streamwise sections follow the larger of lateral size and body length
         # (long slender bodies need long inlet/outlet development lengths)
         ref_lu = max(lat_lu, 0.35 * stream_lu)
-
         nx = _round4(dx * scale + 2 * SIDE_CLEARANCE * lat_lu)
         nz = _round4(dz * scale + 2 * SIDE_CLEARANCE * lat_lu)
         ny = _round4(INLET_DISTANCE * ref_lu + stream_lu + OUTLET_DISTANCE * ref_lu)
-        if max_cells is None or nx * ny * nz <= max_cells:
+        return nx, ny, nz, scale
+
+    # Lower the model resolution until the domain fits the GPU budget. Always
+    # recompute the domain from the *final* size_lu so the returned dims and
+    # the reported blockage/scale stay consistent.
+    while True:
+        nx, ny, nz, scale = dims_for(size_lu)
+        cells = nx * ny * nz
+        if max_cells is None or cells <= max_cells or size_lu <= 16:
             break
-        size_lu = max(24, int(size_lu * (max_cells / (nx * ny * nz)) ** (1 / 3)))
-    else:
-        size_lu = max(16, size_lu // 2)
+        new_size = int(size_lu * (max_cells / cells) ** (1 / 3))
+        if new_size >= size_lu:  # guarantee progress (int truncation)
+            new_size = size_lu - 1
+        size_lu = max(16, new_size)
+    if max_cells is not None and nx * ny * nz > max_cells:
+        notes.append("even the minimum model resolution does not fit the "
+                     "available GPU memory - reduce the model or use a smaller "
+                     "quality setting")
     if size_lu < original_size_lu:
         notes.append(f"model resolution lowered from {original_size_lu} to "
                      f"{size_lu} voxels to fit the available GPU memory")

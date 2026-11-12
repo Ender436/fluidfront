@@ -40,6 +40,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _enqueue_event(q: asyncio.Queue, ev: dict) -> None:
+    """Drop an event for a slow/stalled WebSocket instead of raising
+    QueueFull inside the event loop callback (which logs a traceback)."""
+    try:
+        q.put_nowait(ev)
+    except asyncio.QueueFull:
+        pass
+
+
 def device_info() -> dict:
     """GPU name + memory budget for quality-tier capping (nvidia-smi)."""
     try:
@@ -119,8 +128,8 @@ class JobManager:
             return
         for q in list(self._subs):
             try:
-                self._loop.call_soon_threadsafe(q.put_nowait, ev)
-            except RuntimeError:  # queue full / loop closing
+                self._loop.call_soon_threadsafe(_enqueue_event, q, ev)
+            except RuntimeError:  # loop closing
                 pass
 
     # ----- status.json -----------------------------------------------------
@@ -137,7 +146,7 @@ class JobManager:
             return None
         try:
             return json.loads(p.read_text())
-        except json.JSONDecodeError:  # partial write caught mid-flight
+        except (json.JSONDecodeError, OSError):  # partial/unreadable write
             return None
 
     def write_status(self, name: str, **fields) -> dict:
@@ -185,20 +194,20 @@ class JobManager:
 
     def delete(self, name: str) -> None:
         import shutil
-        d = case_dir(name)
         with self._lock:
+            d = case_dir(name)
             if self._active == name:
                 raise BusyError("case is running - stop it first")
-        if self.read_status(name):
-            (d / "status.json").unlink(missing_ok=True)
-        (d / "status.json.tmp").unlink(missing_ok=True)
-        self._status.pop(name, None)
-        shutil.rmtree(d)
+            if self.read_status(name):
+                (d / "status.json").unlink(missing_ok=True)
+            (d / "status.json.tmp").unlink(missing_ok=True)
+            self._status.pop(name, None)
+            shutil.rmtree(d)
 
     # ----- run control ------------------------------------------------------
     def start(self, name: str) -> None:
-        case_dir(name)  # existence check
         with self._lock:
+            case_dir(name)  # existence check (inside the lock: no delete race)
             if self._active is not None:
                 raise BusyError(
                     f"case {self._active!r} is using the solver; wait for it "
@@ -256,7 +265,7 @@ class JobManager:
             if cancel.is_set():
                 self.write_status(name, state="stopped")
             elif rc == 0:
-                self.write_status(name, state="done", percent=100)
+                self.write_status(name, state="done", percent=100, t=t_steps)
             else:
                 self.write_status(name, state="failed",
                                   error=f"engine exited with code {rc} "
@@ -275,20 +284,41 @@ class JobManager:
 # ---- results readers (forces + downsampled fields) -------------------------
 
 def read_forces(name: str, max_rows: int = 1500) -> dict | None:
-    """forces.csv -> {'t': [...], 'fx': [...], ...} (downsampled tail-kept)."""
+    """forces.csv -> {'t': [...], 'fx': [...], ...} (evenly downsampled).
+
+    The file is appended to while a run is active, so the last line can be
+    half-written; those rows are skipped instead of letting numpy raise (which
+    used to turn a perfectly normal live poll into a 500).
+    """
     import numpy as np
     p = case_dir(name) / "output" / "forces.csv"
     if not p.is_file():
         return None
-    data = np.loadtxt(p, delimiter=",", comments="#")
-    if data.size == 0:
+    rows: list[list[float]] = []
+    try:
+        with open(p, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split(",")
+                if len(parts) < 6:  # partial final line (run in progress)
+                    continue
+                try:
+                    rows.append([float(v) for v in parts[:6]])
+                except ValueError:  # torn write / stray text
+                    continue
+    except OSError:
         return None
-    data = np.atleast_2d(data)
+    if not rows:
+        return None
+    data = np.asarray(rows, dtype=float)
     if len(data) > max_rows:
-        step = -(-len(data) // max_rows)
-        data = data[::step]
+        # keep the whole trend (both ends) while bounding the payload
+        idx = np.linspace(0, len(data) - 1, max_rows).round().astype(int)
+        data = data[idx]
     cols = ["t", "fx", "fy", "fz", "cd", "cl"]
-    return {c: data[:, i].tolist() for i, c in enumerate(cols) if i < data.shape[1]}
+    return {c: data[:, i].tolist() for i, c in enumerate(cols)}
 
 
 def snapshots(name: str) -> dict[str, list[int]]:
@@ -302,29 +332,57 @@ def snapshots(name: str) -> dict[str, list[int]]:
     return {k: sorted(v) for k, v in res.items()}
 
 
-def _pick_vtk(out_dir: Path, which: str, t: int | None, name: str = "") -> Path:
-    """Latest `which-*.vtk` snapshot at step <= t."""
+def _vtk_candidates(out_dir: Path, which: str, t: int | None,
+                    name: str = "") -> list[Path]:
+    """All `which-*.vtk` snapshots at step <= t, oldest first."""
     files = sorted(out_dir.glob(f"{which}-*.vtk"))
     if not files:
         raise NotFound(f"no '{which}' snapshots for case {name!r}")
     if t is not None:
         files = [f for f in files
                  if int(f.stem.rpartition("-")[2]) <= t] or files[:1]
-    return files[-1]
+    return files
+
+
+def _pick_vtk(out_dir: Path, which: str, t: int | None, name: str = "") -> Path:
+    """Latest `which-*.vtk` snapshot at step <= t."""
+    return _vtk_candidates(out_dir, which, t, name)[-1]
+
+
+def _load_latest_vtk(out_dir: Path, which: str, t: int | None,
+                     name: str = ""):
+    """Newest readable snapshot. The engine writes VTK files directly, so the
+    newest one can be half-written while a run is active; fall back to the
+    previous complete frame instead of failing the request."""
+    from ..vtkio import load_vtk
+    last: Exception | None = None
+    for f in reversed(_vtk_candidates(out_dir, which, t, name)):
+        try:
+            return load_vtk(f)
+        except (ValueError, IndexError, KeyError, OSError) as e:
+            last = e
+    raise ValueError(f"no readable '{which}' snapshot for case {name!r}: {last}")
 
 
 def read_q(name: str, t: int | None = None, grid: int = 96):
-    """Q-criterion vortex grid for the viewer (see fluidfront.qcriterion)."""
+    """Q-criterion vortex grid for the viewer (see fluidfront.qcriterion).
+
+    Like read_field, skip a half-written newest snapshot while a run is
+    active and use the previous complete frame instead."""
     from ..qcriterion import q_criterion
     out_dir = case_dir(name) / "output"
-    u = _pick_vtk(out_dir, "u", t, name)
-    t_actual = int(u.stem.rpartition("-")[2])
-    try:
-        fl = _pick_vtk(out_dir, "flags", t, name)
-    except NotFound:
-        fl = None
-    res = q_criterion(u, fl, grid=grid)
-    return res, t_actual
+    last: Exception | None = None
+    for u in reversed(_vtk_candidates(out_dir, "u", t, name)):
+        t_actual = int(u.stem.rpartition("-")[2])
+        try:
+            fl = _pick_vtk(out_dir, "flags", t, name)
+        except NotFound:
+            fl = None
+        try:
+            return q_criterion(u, fl, grid=grid), t_actual
+        except (ValueError, IndexError, KeyError, OSError) as e:
+            last = e
+    raise ValueError(f"no readable 'u' snapshot for case {name!r}: {last}")
 
 
 def read_field(name: str, which: str = "u", t: int | None = None,
@@ -335,9 +393,8 @@ def read_field(name: str, which: str = "u", t: int | None = None,
     dims = [nx, ny, nz, ncomp, t_actual].
     """
     import numpy as np
-    from ..vtkio import load_vtk
     out_dir = case_dir(name) / "output"
-    snap = load_vtk(_pick_vtk(out_dir, which, t, name))
+    snap = _load_latest_vtk(out_dir, which, t, name)
     field = snap["field"].astype(np.float32)
     ncomp, nz, ny, nx = field.shape
     n = nx * ny * nz
