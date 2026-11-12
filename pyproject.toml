@@ -17,5 +17,10 @@ dependencies = [
     "imageio-ffmpeg>=0.6",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "httpx2>=0.28",  # needed by starlette's TestClient in the test suite
+]
+
 [tool.setuptools.packages.find]
 include = ["fluidfront*"]

@@ -90,4 +90,9 @@ details summary { color: var(--mut); cursor: pointer; margin: 8px 0; }
   padding: 10px 14px; border-top: 1px solid var(--line); }
 .vctl label { margin: 2px 0; font-size: .8rem; }
 .vctl input[type=range] { width: 90px; }
+#v-prog { display: none; width: 130px; height: 7px; border-radius: 4px;
+          background: var(--panel2); border: 1px solid var(--line); overflow: hidden; }
+#v-prog.on { display: inline-block; }
+#v-progfill { display: block; height: 100%; width: 0%; background: var(--acc);
+              transition: width .15s; }
 canvas#chart { max-width: 100%; }

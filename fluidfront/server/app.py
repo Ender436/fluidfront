@@ -44,6 +44,18 @@ app = FastAPI(title="fluidfront", version="0.0.1", lifespan=lifespan)
 jobs = JobManager()
 
 
+@app.middleware("http")
+async def revalidate_static(request: Request, call_next):
+    """Web files change on every pull; a browser left caching them can run a
+    stale app.js (dead buttons). Force revalidation of everything except
+    API/WS traffic — unchanged files still come back as cheap 304s."""
+    response = await call_next(request)
+    path = request.url.path
+    if not (path.startswith("/api/") or path.startswith("/ws/")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def _safe_name(raw: str) -> str:
     s = re.sub(r"[^a-z0-9_-]+", "-", raw.lower()).strip("-_")[:40] or "case"
     if not re.match(r"^[a-z0-9]", s):
@@ -350,8 +362,9 @@ def export_finish(name: str, payload: dict) -> dict:
     except EncodeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     shutil.rmtree(tmp, ignore_errors=True)
+    size = (cdir / f"export.{fmt}").stat().st_size
     return {"url": f"/api/cases/{name}/export/file?fmt={fmt}", "frames": n,
-            "seconds": round(n / fps, 1)}
+            "seconds": round(n / fps, 1), "size": size}
 
 
 @app.get("/api/cases/{name}/export/file")

@@ -422,4 +422,17 @@ testing work everywhere.
   (mp4/gif frame counts, palette cleanup, error paths). Viewer.capture()
   is a synchronous render+toDataURL (WebGL buffers die at composite -
   toBlob would race). Browser click-through deferred to user testing.
+- **2026-11-12 — M6c export progress UI + stale-cache fix.** User click on
+  "make video" was inert: server logs showed zero export requests from the
+  browser, while the endpoints verified fine via curl - the tab was running
+  a cached pre-M6c app.js next to a fresh index.html (StaticFiles ships no
+  Cache-Control, so subresources can be served from cache without
+  revalidation). New `revalidate_static` middleware sends
+  `Cache-Control: no-cache` for everything outside /api and /ws (304s stay
+  cheap). Export UX now shows real progress: capture/encode status text,
+  button reads "making... i/n" while disabled, a 130px inline progress bar,
+  and the result link includes file size (finish response gained `size`).
+  Added TestExportAPI (static revalidation headers, frame POST round-trip
+  -> gif size -> begin clears previous video, finish <2 frames 400);
+  starlette 1.x TestClient needs the `httpx2` dev extra. 25 tests green.
 - **Next: M6d** results-report page/share. Queued: coarse-resolution Cd

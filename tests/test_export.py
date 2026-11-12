@@ -63,5 +63,67 @@ class TestExporter(unittest.TestCase):
                 encode_video(Path(d), Path(d) / "v.mp4", fps=12, fmt="mp4")
 
 
+class TestExportAPI(unittest.TestCase):
+    """Endpoint behaviour behind the "make video" button: begin clears the
+    previous video, finish reports the file size, and web files ship with
+    revalidation headers (a cached stale app.js silently kills the button)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from fastapi.testclient import TestClient
+        import fluidfront.server.app as app_module
+        from fluidfront.server import jobs
+        cls.jobs = jobs
+        cls._cases = jobs.CASES
+        cls._tmp = tempfile.TemporaryDirectory()
+        jobs.CASES = Path(cls._tmp.name)
+        (jobs.CASES / "tiny").mkdir()
+        (jobs.CASES / "tiny" / "case.json").write_text("{}")
+        cls.client = TestClient(app_module.app)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.jobs.CASES = cls._cases
+        cls._tmp.cleanup()
+
+    def _jpg(self, color: str) -> bytes:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "f.jpg"
+            r = subprocess.run(
+                [ffmpeg_exe(), "-y", "-f", "lavfi", "-i", f"color={color}:s=64x64",
+                 "-frames:v", "1", str(p)], capture_output=True)
+            self.assertEqual(r.returncode, 0, r.stderr.decode()[-300:])
+            return p.read_bytes()
+
+    def test_static_files_revalidated(self):
+        r = self.client.get("/index.html")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers.get("cache-control"), "no-cache")
+        r = self.client.get("/api/health")
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(r.headers.get("cache-control"))
+
+    def test_roundtrip_size_then_begin_clears(self):
+        c = self.client
+        out = self.jobs.CASES / "tiny" / "export.gif"
+        self.assertEqual(c.post("/api/cases/tiny/export/begin").status_code, 200)
+        for i, color in enumerate(("red", "green", "blue")):
+            r = c.post(f"/api/cases/tiny/export/frame?i={i}", content=self._jpg(color),
+                       headers={"content-type": "image/jpeg"})
+            self.assertEqual(r.status_code, 200, r.text)
+        r = c.post("/api/cases/tiny/export/finish", json={"fps": 8, "fmt": "gif"})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["frames"], 3)
+        self.assertGreater(body["size"], 0)
+        self.assertEqual(out.stat().st_size, body["size"])
+        self.assertFalse((self.jobs.CASES / "tiny" / "export_frames").exists())
+        # a new begin must wipe the previous video + frames wholesale
+        self.assertEqual(c.post("/api/cases/tiny/export/begin").status_code, 200)
+        self.assertFalse(out.exists())
+        r = c.post("/api/cases/tiny/export/finish", json={"fps": 8, "fmt": "gif"})
+        self.assertEqual(r.status_code, 400)
+
+
 if __name__ == "__main__":
     unittest.main()

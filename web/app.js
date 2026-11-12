@@ -378,7 +378,9 @@ function jpegBytes(dataUrl) {
 $("f-export").onclick = async () => {
   const v = state.viewer, name = state.current;
   const st = $("v-status"), dl = $("v-dl"), btn = $("f-export");
-  if (!v || !name) return;
+  const bar = $("v-prog"), fill = $("v-progfill");
+  const setBar = (p) => { bar.classList.add("on"); fill.style.width = `${Math.round(p)}%`; };
+  if (!v || !name) { st.textContent = "open a run first"; return; }
   const fmt = $("f-vfmt").value, fps = +$("f-vfps").value;
   let frames = (((state.snapSel[name] || {})[snapKey()] || [])).slice().sort((a, b) => a - b);
   if (frames.length < 2) {
@@ -391,28 +393,37 @@ $("f-export").onclick = async () => {
   }
   btn.disabled = true;
   dl.innerHTML = "";
+  st.textContent = "starting capture…";
+  setBar(0);
   try {
     await api(`/api/cases/${name}/export/begin`, { method: "POST" });
     for (let i = 0; i < frames.length; i++) {
-      st.textContent = `frame ${i + 1}/${frames.length}…`;
+      st.textContent = `capturing frame ${i + 1}/${frames.length}…`;
+      btn.textContent = `making… ${i + 1}/${frames.length}`;
+      setBar(100 * (i + 1) / frames.length);
       await v.load(name, frames[i]);
       const bytes = jpegBytes(v.capture(1280, 720));
       await api(`/api/cases/${name}/export/frame?i=${i}`,
                 { method: "POST", headers: { "Content-Type": "image/jpeg" },
                   body: bytes });
     }
-    st.textContent = "encoding…";
+    st.textContent = "encoding… (a few seconds)";
+    btn.textContent = "encoding…";
     const res = await api(`/api/cases/${name}/export/finish`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fps, fmt }),
     });
     st.textContent = "";
+    const mb = res.size ? ` · ${(res.size / 1048576).toFixed(1)} MB` : "";
     dl.innerHTML = `<a href="${res.url}" download="${esc(name)}.${fmt}">` +
-      `⬇ ${fmt.toUpperCase()} · ${res.frames} frames · ${res.seconds}s</a>`;
+      `⬇ ${fmt.toUpperCase()} · ${res.frames} frames · ${res.seconds}s${mb}</a>`;
   } catch (e) {
     st.textContent = "export failed: " + e.message;
   } finally {
     btn.disabled = false;
+    btn.textContent = "make video";
+    bar.classList.remove("on");
+    fill.style.width = "0%";
     loadFrame(); // viewer back to the frame selected in the time selector
   }
 };
