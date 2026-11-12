@@ -14,6 +14,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "numpy>=1.26",
     "trimesh>=4.7",
+    "imageio-ffmpeg>=0.6",
 ]
 
 [tool.setuptools.packages.find]

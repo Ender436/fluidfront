@@ -18,10 +18,12 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import (FastAPI, File, Form, HTTPException, Response,
+from fastapi import (FastAPI, File, Form, HTTPException, Request, Response,
                      UploadFile, WebSocket, WebSocketDisconnect)
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..exporter import EncodeError, encode_video
 from ..gen.schema import load_case
 from ..gen.units import CaseError
 from ..geometry.loaders import GeometryError
@@ -287,6 +289,82 @@ def q_field(name: str, t: int | None = None, grid: int = 96,
                         media_type="application/octet-stream",
                         headers={"X-Meta": json.dumps(info)})
     return {**info, "data_b64": base64.b64encode(res["q"].tobytes()).decode()}
+
+
+# -------------------------------------------------------------- video export -
+# The browser renders each snapshot and POSTs JPEG frames; we stitch them with
+# the ffmpeg binary bundled in imageio-ffmpeg (no system install needed).
+
+EXPORT_MAX_FRAMES = 300
+
+
+@app.post("/api/cases/{name}/export/begin")
+def export_begin(name: str) -> dict:
+    try:
+        cdir = case_dir(name)
+    except NotFound:
+        raise HTTPException(status_code=404, detail=f"no such case: {name!r}")
+    shutil.rmtree(cdir / "export_frames", ignore_errors=True)
+    (cdir / "export_frames").mkdir()
+    for old in cdir.glob("export.*"):  # previous videos are replaced wholesale
+        old.unlink(missing_ok=True)
+    return {"ok": True}
+
+
+@app.post("/api/cases/{name}/export/frame")
+async def export_frame(name: str, i: int, request: Request) -> dict:
+    try:
+        tmp = case_dir(name) / "export_frames"
+    except NotFound:
+        raise HTTPException(status_code=404, detail=f"no such case: {name!r}")
+    if not tmp.is_dir() or not 0 <= i < EXPORT_MAX_FRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail="no export in progress (call begin first) or frame index "
+                   f"out of range [0,{EXPORT_MAX_FRAMES})")
+    body = await request.body()
+    if not 100 < len(body) <= 10_000_000:
+        raise HTTPException(status_code=400, detail="frame upload looks wrong")
+    (tmp / f"frame_{i:05d}.jpg").write_bytes(body)
+    return {"ok": True}
+
+
+@app.post("/api/cases/{name}/export/finish")
+def export_finish(name: str, payload: dict) -> dict:
+    fps, fmt = int(payload.get("fps", 12)), str(payload.get("fmt", "mp4"))
+    if fmt not in ("mp4", "gif"):
+        raise HTTPException(status_code=400, detail="fmt must be mp4 or gif")
+    if not 2 <= fps <= 60:
+        raise HTTPException(status_code=400, detail="fps must be 2..60")
+    try:
+        cdir = case_dir(name)
+    except NotFound:
+        raise HTTPException(status_code=404, detail=f"no such case: {name!r}")
+    tmp = cdir / "export_frames"
+    n = len(list(tmp.glob("frame_*.jpg"))) if tmp.is_dir() else 0
+    if n < 2:
+        raise HTTPException(status_code=400,
+                            detail=f"need at least 2 captured frames (got {n})")
+    try:
+        encode_video(tmp, cdir / f"export.{fmt}", fps, fmt)
+    except EncodeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    shutil.rmtree(tmp, ignore_errors=True)
+    return {"url": f"/api/cases/{name}/export/file?fmt={fmt}", "frames": n,
+            "seconds": round(n / fps, 1)}
+
+
+@app.get("/api/cases/{name}/export/file")
+def export_file(name: str, fmt: str = "mp4") -> FileResponse:
+    if fmt not in ("mp4", "gif"):
+        raise HTTPException(status_code=400, detail="fmt must be mp4 or gif")
+    try:
+        path = case_dir(name) / f"export.{fmt}"
+    except NotFound:
+        raise HTTPException(status_code=404, detail=f"no such case: {name!r}")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="no exported video yet")
+    return FileResponse(path, filename=f"{name}.{fmt}")
 
 
 # ------------------------------------------------------------------- events -

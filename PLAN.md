@@ -405,6 +405,21 @@ testing work everywhere.
   rerun output clearing, tunnel BC faces, schema guards (smagorinsky_const,
   subgrid_model, force_every), validate prep registry. Run:
   `.venv/bin/python -m unittest discover -s tests`.
-- **Next: M6c** MP4/GIF export (canvas frame capture -> server ffmpeg via
-  imageio-ffmpeg in .venv); then M6d results-report page/share. Queued:
-  coarse-resolution Cd artifacts (M3 follow-up).
+- **M6c — MP4/GIF export (viewer -> downloadable video).** The browser
+  renders every snapshot of the selected field with the CURRENT view
+  (mode, threshold, slice, colormap, camera) and POSTs 1280x720 JPEG frames;
+  the server stitches them with the ffmpeg binary bundled in
+  imageio-ffmpeg (pip wheel, no system install - works the same on
+  Windows; now a pyproject dependency). MP4: h264 crf23, yuv420p,
+  faststart; GIF: two-pass palette, 640px wide. Endpoints: export/begin
+  (clears temp frames + previous video), export/frame?i (one JPEG, size
+  guarded), export/finish {fps,fmt} (encode + cleanup), export/file
+  (download). Max 300 frames - client decimates longer snapshot lists
+  evenly. Frames live in cases/<name>/export_frames/ during capture;
+  result is cases/<name>/export.(mp4|gif), replaced on each export.
+  Server verified end-to-end via curl (synthetic frames: 2.0s/12fps h264,
+  gif 87KB, all guard rails return 400/404); encoder test suite added
+  (mp4/gif frame counts, palette cleanup, error paths). Viewer.capture()
+  is a synchronous render+toDataURL (WebGL buffers die at composite -
+  toBlob would race). Browser click-through deferred to user testing.
+- **Next: M6d** results-report page/share. Queued: coarse-resolution Cd

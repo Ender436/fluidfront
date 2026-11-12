@@ -161,6 +161,22 @@
             <select id="f-time"></select></label>
           <button id="f-refresh">↻</button>
         </div>
+        <div class="vctl" title="renders the current view through every snapshot into a downloadable video">
+          <label>video
+            <select id="f-vfmt">
+              <option value="mp4">MP4</option>
+              <option value="gif">GIF</option>
+            </select></label>
+          <label>fps
+            <select id="f-vfps">
+              <option value="8">8</option>
+              <option value="12" selected>12</option>
+              <option value="16">16</option>
+              <option value="24">24</option>
+            </select></label>
+          <button id="f-export">make video</button>
+          <span id="v-status" class="muted"></span><span id="v-dl"></span>
+        </div>
       </div>
       <div class="card chartbox">
         <h3>Force coefficients <span class="muted" id="cdnote"></span></h3>

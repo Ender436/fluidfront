@@ -186,6 +186,21 @@ export class Viewer {
     if (this.raw) this._buildPoints(this.raw); // recolor with new settings
   }
 
+  // One-shot deterministic render at export resolution, returning a JPEG
+  // data-URL. toDataURL must run synchronously right after render(): WebGL
+  // drawing buffers may be cleared once the frame composites (toBlob's
+  // async read would be too late).
+  capture(w = 1280, h = 720) {
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+    const url = this.renderer.domElement.toDataURL("image/jpeg", 0.85);
+    this._resize(); // back to the on-screen size/aspect
+    return url;
+  }
+
   // engine coords (x=width, y=flow, z=height) -> three.js with flow along
   // +x and engine height up; divide by the LARGEST dim so nothing is stretched
   _pt(x, y, z, d) {

@@ -367,6 +367,56 @@ $("f-solid").onchange = async () => {
 $("f-time").onchange = loadFrame;
 $("f-refresh").onclick = () => { loadFrame(); loadForces(); };
 
+// ------------------------------------------------------------- video export -
+function jpegBytes(dataUrl) {
+  const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
+$("f-export").onclick = async () => {
+  const v = state.viewer, name = state.current;
+  const st = $("v-status"), dl = $("v-dl"), btn = $("f-export");
+  if (!v || !name) return;
+  const fmt = $("f-vfmt").value, fps = +$("f-vfps").value;
+  let frames = (((state.snapSel[name] || {})[snapKey()] || [])).slice().sort((a, b) => a - b);
+  if (frames.length < 2) {
+    st.textContent = "need at least two snapshots (check the run's snapshot setting)";
+    return;
+  }
+  if (frames.length > 300) { // server cap: keep every k-th, evenly
+    const k = Math.ceil(frames.length / 300);
+    frames = frames.filter((_, i) => i % k === 0);
+  }
+  btn.disabled = true;
+  dl.innerHTML = "";
+  try {
+    await api(`/api/cases/${name}/export/begin`, { method: "POST" });
+    for (let i = 0; i < frames.length; i++) {
+      st.textContent = `frame ${i + 1}/${frames.length}…`;
+      await v.load(name, frames[i]);
+      const bytes = jpegBytes(v.capture(1280, 720));
+      await api(`/api/cases/${name}/export/frame?i=${i}`,
+                { method: "POST", headers: { "Content-Type": "image/jpeg" },
+                  body: bytes });
+    }
+    st.textContent = "encoding…";
+    const res = await api(`/api/cases/${name}/export/finish`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fps, fmt }),
+    });
+    st.textContent = "";
+    dl.innerHTML = `<a href="${res.url}" download="${esc(name)}.${fmt}">` +
+      `⬇ ${fmt.toUpperCase()} · ${res.frames} frames · ${res.seconds}s</a>`;
+  } catch (e) {
+    st.textContent = "export failed: " + e.message;
+  } finally {
+    btn.disabled = false;
+    loadFrame(); // viewer back to the frame selected in the time selector
+  }
+};
+
 initForm();
 connectWS();
 window.__viewer = null; // handy for debugging; set when created
