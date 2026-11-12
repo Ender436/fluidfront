@@ -374,6 +374,37 @@ testing work everywhere.
   depth-tested, so the camera-facing shell wins from every angle. Verified
   A/B in-browser by pixel sampling (below-view changes with the fix, above
   view unchanged; iso/solid depth behavior unaffected).
+- **Two-model code audit (round 1).** Model A committed fixes (68848e8):
+  Q-criterion off-diagonal tensor pairs (vortices now detected on every
+  axis; the old formula only fired for z-axis rotation), lift = F.z in 3D /
+  F.x in D2Q9, full TYPE_S bitmask in STL velocity init, snapshot_every
+  aligned to force_every, autolayout recompute from fitted size_lu, server
+  robustness (half-written files, WS QueueFull, delete/start race,
+  per-precision VRAM cap), WebUI guards. Reviewed line-by-line: sound.
+  Model B's 7-finding list: all seven verified REAL (no false positives),
+  all fixed: (1) generated 3D tunnel BC omitted the z==0 floor face - now
+  all six faces TYPE_E, ground override still wins; note this changes
+  physics of any future run, including reruns of older cases (setup.cpp is
+  regenerated from case.json at build time); (2) Stop hung while the solver
+  was silent - cancel is now polled by a watchdog thread (terminate ->
+  wait(10) -> kill), independent of stdout; (3) reruns kept the previous
+  run's snapshots/forces - output/ is cleared at run start; (4) Windows
+  job-object ctypes structs were wrong (LimitFlags at offset 16, not 0;
+  fixed-width types so layout is host-independent; argtypes/restype added)
+  - the orphan guard had been silently disabled; (5) validation prep
+  callback lookup (prepare_<name>) missed sphere3d - explicit registry
+  instead; (6) smagorinsky_const was accepted but never applied - the
+  pinned engine bakes C~=0.173 into its kernel and we do not patch it, so
+  the option is now rejected loudly; (7) "hide model" dead in Q view -
+  refresh() now syncs solid visibility before the early return (verified
+  in-browser: hide/show flips solid.visible, no console errors).
+- **Committed test suite (tests/, stdlib unittest, 18 tests, <1s).** Locks
+  in the fixes: analytic Q on ALL THREE rotation axes + shear/strain/uniform
+  (the ad-hoc M6a check only rotated about z - that is how the old formula
+  error survived), Win32 job-struct layout, stop-watchdog vs silent child,
+  rerun output clearing, tunnel BC faces, schema guards (smagorinsky_const,
+  subgrid_model, force_every), validate prep registry. Run:
+  `.venv/bin/python -m unittest discover -s tests`.
 - **Next: M6c** MP4/GIF export (canvas frame capture -> server ffmpeg via
   imageio-ffmpeg in .venv); then M6d results-report page/share. Queued:
   coarse-resolution Cd artifacts (M3 follow-up).

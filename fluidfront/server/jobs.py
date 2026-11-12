@@ -40,6 +40,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _clear_outputs(case_dir: Path) -> None:
+    """Drop the previous run's snapshots/forces so a rerun can never display
+    stale frames (partially written *.vtk.* included)."""
+    out = case_dir / "output"
+    out.mkdir(parents=True, exist_ok=True)
+    for old in list(out.glob("*.vtk")) + list(out.glob("*.vtk.*")) \
+            + [out / "forces.csv"]:
+        old.unlink(missing_ok=True)
+
+
 def _enqueue_event(q: asyncio.Queue, ev: dict) -> None:
     """Drop an event for a slow/stalled WebSocket instead of raising
     QueueFull inside the event loop callback (which logs a traceback)."""
@@ -245,6 +255,9 @@ class JobManager:
         try:
             self.write_status(name, state="building", error=None,
                               started=_now(), percent=0, t=0)
+            # a rerun must never show the previous run's frames/forces: drop
+            # old results before the engine starts writing new ones
+            _clear_outputs(cdir)
             spec = load_case(cdir)
             gbuild.write_case_files(spec)
             binary = gbuild.build()

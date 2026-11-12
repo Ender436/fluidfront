@@ -177,6 +177,7 @@ export class Viewer {
   }
 
   refresh() {
+    if (this.solid) this.solid.visible = this.settings.showSolid;
     if (this.settings.field === "q" && this.iso) {
       this.iso.isolation = this._isoLevel(); // threshold slider: re-polygonize
       this.iso.update();                     // (no refetch)

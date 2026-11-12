@@ -35,7 +35,6 @@ class CaseSpec:
     velocity_set: str
     subgrid: bool
     subgrid_model: str
-    smagorinsky_const: float
     output_dir: Path
 
 
@@ -111,9 +110,14 @@ def load_case(case_dir: Path) -> CaseSpec:
         # model than the case file claims.
         raise CaseError(f"options.subgrid_model {subgrid_model!r} is not "
                         "available in the pinned engine (use 'smagorinsky')")
-    cs = float(opts.get("smagorinsky_const", 0.1))
-    if not 0.01 <= cs <= 0.5:
-        raise CaseError(f"options.smagorinsky_const {cs} out of sane range [0.01, 0.5]")
+    if "smagorinsky_const" in opts:
+        # the pinned engine bakes the Smagorinsky-Lilly constant into its
+        # kernel (C = 1/pi*(2/(3*CK))^(3/4) ~= 0.173); we never patch the
+        # engine, so honouring a custom value is impossible - reject it
+        # instead of silently ignoring it
+        raise CaseError("options.smagorinsky_const is not configurable in the "
+                        "pinned engine (fixed Smagorinsky-Lilly constant ~= "
+                        "0.173); remove the option")
     subgrid = bool(opts.get("subgrid", derived.subgrid_suggested))
     if derived.les_clamped and "subgrid" in opts and not opts["subgrid"]:
         raise CaseError(
@@ -144,6 +148,6 @@ def load_case(case_dir: Path) -> CaseSpec:
         name=name, case_dir=case_dir, raw=raw, derived=derived,
         nx=nx, ny=ny, nz=nz, geometry=geom, flow=flow, run=run,
         precision=precision, velocity_set=vsel, subgrid=subgrid,
-        subgrid_model=subgrid_model, smagorinsky_const=cs,
+        subgrid_model=subgrid_model,
         output_dir=out,
     )

@@ -21,6 +21,25 @@ from .vtkio import load_vtk
 GRID = 96  # output cube resolution (browser marching-cubes input)
 
 
+def _q_from_field(field: np.ndarray, sp: list) -> np.ndarray:
+    """Q = -1/2 tr(G*G) with G = grad(u), for a (3,nz,ny,nx) field and
+    spacings sp = [dx, dy, dz]. Expanded:
+    Q = -( sum_{i<j} g_ij*g_ji + 1/2*sum_i g_ii^2 )
+    e.g. solid rotation (+/-w): Q = +w^2; pure shear: Q = 0.
+    np.gradient returns [d/dz, d/dy, d/dx], so the off-diagonal pairs are
+    g_xy*g_yx = du[1]*dv[2], g_xz*g_zx = du[0]*dw[2],
+    g_yz*g_zy = dv[0]*dw[1]. (Mixing in the diagonal terms here silently
+    drops vortices whose axis is not z - e.g. the streamwise wake vortices
+    that dominate a wind-tunnel view.)
+    """
+    u, v, w = field  # velocity x,y,z components (SI m/s)
+    du = np.gradient(u, sp[2], sp[1], sp[0])
+    dv = np.gradient(v, sp[2], sp[1], sp[0])
+    dw = np.gradient(w, sp[2], sp[1], sp[0])
+    return -(du[1] * dv[2] + du[0] * dw[2] + dv[0] * dw[1]
+             + 0.5 * (du[2] * du[2] + dv[1] * dv[1] + dw[0] * dw[0]))
+
+
 def q_criterion(u_vtk: Path, flags_vtk: Path | None = None,
                 grid: int = GRID) -> dict:
     """Compute a grid^3 Q-field from a u-*.vtk snapshot.
@@ -42,23 +61,8 @@ def q_criterion(u_vtk: Path, flags_vtk: Path | None = None,
         sp = [s * k for s in sp]
     nzc, nyc, nxc = field.shape[1:]
 
-    u, v, w = field  # velocity x,y,z components (SI m/s)
-    # np.gradient returns [d/daxis0=dz, d/daxis1=dy, d/daxis2=dx]
-    du = np.gradient(u, sp[2], sp[1], sp[0])
-    dv = np.gradient(v, sp[2], sp[1], sp[0])
-    dw = np.gradient(w, sp[2], sp[1], sp[0])
+    q = _q_from_field(field, sp)
     del field
-    # Q = -1/2 tr(G*G) with G = grad(u), expanded:
-    # Q = -( sum_{i<j} g_ij*g_ji + 1/2*sum_i g_ii^2 )
-    # e.g. solid rotation (+/-w): Q = +w^2; pure shear: Q = 0.
-    # np.gradient returns [d/dz, d/dy, d/dx], so the off-diagonal pairs are
-    # g_xy*g_yx = du[1]*dv[2], g_xz*g_zx = du[0]*dw[2],
-    # g_yz*g_zy = dv[0]*dw[1]. (Mixing in the diagonal terms here silently
-    # drops vortices whose axis is not z - e.g. the streamwise wake vortices
-    # that dominate a wind-tunnel view.)
-    q = -(du[1] * dv[2] + du[0] * dw[2] + dv[0] * dw[1]
-          + 0.5 * (du[2] * du[2] + dv[1] * dv[1] + dw[0] * dw[0]))
-    del du, dv, dw
 
     if flags_vtk is not None:
         fl = np.ascontiguousarray(load_vtk(flags_vtk)["field"])

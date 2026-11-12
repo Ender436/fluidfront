@@ -27,37 +27,59 @@ def _pdeath_sigterm():
         pass
 
 
+# Windows job-object structures, per the Win32 SDK (JobObjectExtendedLimit-
+# Information, class 9). Field order matters: LimitFlags sits at offset 16
+# (after two LARGE_INTEGER time limits), not first. Fixed-width types keep
+# the layout byte-identical on every host (c_ulong is 8 bytes on Linux but
+# 4 on Windows x64); x64 Windows is the only target, where c_size_t == 8.
+class _BasicLim(ctypes.Structure):
+    _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", ctypes.c_uint32),
+                ("MinimumWorkingSetSize", ctypes.c_uint64),
+                ("MaximumWorkingSetSize", ctypes.c_uint64),
+                ("ActiveProcessLimit", ctypes.c_uint32),
+                ("Affinity", ctypes.c_uint64),  # ULONG_PTR
+                ("PriorityClass", ctypes.c_uint32),
+                ("SchedulingClass", ctypes.c_uint32)]
+
+
+class _IoCounters(ctypes.Structure):
+    _fields_ = [(n, ctypes.c_uint64) for n in (
+        "ReadBytes", "WriteBytes", "OtherBytes",
+        "ReadOperations", "WriteOperations", "OtherOperations")]
+
+
+class _ExtLim(ctypes.Structure):
+    _fields_ = [("BasicLimitInformation", _BasicLim),
+                ("IoInfo", _IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_uint64),
+                ("JobMemoryLimit", ctypes.c_uint64),
+                ("PeakProcessMemoryUsed", ctypes.c_uint64),
+                ("PeakJobMemoryUsed", ctypes.c_uint64)]
+
+
 def _win_assign_kill_job(proc) -> int | None:
     """Windows counterpart of PR_SET_PDEATHSIG: put the engine in a Job Object
     with KILL_ON_CLOSE; closing our handle (i.e. any process death) kills it.
     Returns the job handle to keep open until the engine exits."""
     try:
-        class BasicLim(ctypes.Structure):
-            _fields_ = [("LimitFlags", ctypes.c_ulonglong),
-                        ("TimeLimit", ctypes.c_longlong),
-                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
-                        ("PeakJobMemoryUsed", ctypes.c_size_t),
-                        ("PeakTotalProcesses", ctypes.c_ulonglong),
-                        ("PeakTotalNumberOfThreads", ctypes.c_ulonglong)]
-
-        class IoCounters(ctypes.Structure):
-            _fields_ = [(n, ctypes.c_ulonglong) for n in (
-                "ReadBytes", "WriteBytes", "OtherBytes",
-                "ReadOperations", "WriteOperations", "OtherOperations")]
-
-        class ExtLim(ctypes.Structure):
-            _fields_ = [("BasicLimitInformation", BasicLim),
-                        ("IoInfo", IoCounters),
-                        ("ProcessMemoryLimit", ctypes.c_size_t),
-                        ("JobMemoryLimit", ctypes.c_size_t),
-                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
-                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
-
         k32 = ctypes.windll.kernel32
+        # explicit signatures: without restype, handles come back as 32-bit
+        # ints and get truncated on 64-bit Windows
+        k32.CreateJobObjectW.restype = ctypes.c_void_p
+        k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+        k32.SetInformationJobObject.restype = ctypes.c_int
+        k32.SetInformationJobObject.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                                ctypes.c_void_p, ctypes.c_ulong]
+        k32.AssignProcessToJobObject.restype = ctypes.c_int
+        k32.AssignProcessToJobObject.argtypes = [ctypes.c_void_p,
+                                                 ctypes.c_void_p]
+        k32.CloseHandle.argtypes = [ctypes.c_void_p]
         job = k32.CreateJobObjectW(None, None)
         if not job:
             return None
-        info = ExtLim()
+        info = _ExtLim()
         info.BasicLimitInformation.LimitFlags = 0x2000  # KILL_ON_CLOSE
         ok = k32.SetInformationJobObject(job, 9, ctypes.byref(info),
                                          ctypes.sizeof(info))
@@ -101,6 +123,17 @@ def run_case(binary: Path, case_dir: Path, on_event: Callback | None = None,
             preexec_fn=_pdeath_sigterm if os.name == "posix" else None,
         )
         job = _win_assign_kill_job(proc) if os.name == "nt" else None
+        if cancel is not None:  # watchdog: stop must work even while the
+            def _watch() -> None:  # engine is silent (kernel compile, hang)
+                while proc.poll() is None:
+                    if cancel.wait(0.5):
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()  # bounded escalate, then release stdout
+                        return
+            threading.Thread(target=_watch, daemon=True).start()
         assert proc.stdout is not None
         try:
             for line in proc.stdout:
@@ -129,6 +162,7 @@ def run_case(binary: Path, case_dir: Path, on_event: Callback | None = None,
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+            proc.stdout.close()  # release the pipe fd without waiting for GC
             if job is not None:  # closing the job handle releases the kill-guard
                 ctypes.windll.kernel32.CloseHandle(job)
     return rc

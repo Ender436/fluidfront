@@ -220,7 +220,10 @@ def generate_setup(spec: CaseSpec) -> str:
     if spec.flow.get("mode") == "volume_force":
         boundary = "        // fully periodic pressure-driven channel (validation)"
     else:
-        zface = "" if spec.nz == 1 else "||z==NZ-1u"
+        # equilibrium BC on every domain face except the inflow (upstream
+        # tunnel convention); the ground override below replaces z==0 with a
+        # no-slip solid wall when enabled
+        zface = "" if spec.nz == 1 else "||z==0u||z==NZ-1u"
         ground = "\n        if(z==0u) { lbm.flags[n] = TYPE_S; }" if spec.geometry.get("ground") else ""
         boundary = (f"        if(x==0u||x==NX-1u||y==0u||y==NY-1u{zface}) {{ lbm.flags[n] = TYPE_E; }}{ground}")
 

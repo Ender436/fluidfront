@@ -75,6 +75,10 @@ SPHERE3D = {
 CASES.append((SPHERE3D, "check_sphere3d"))
 
 
+_PREPARES: dict[str, object] = {}  # case name -> prep callback (explicit
+                                   # registry; name-matching was fragile)
+
+
 def prepare_sphere3d(case_dir: Path) -> None:
     """Build the STL model with the real geometry pipeline (M2 coverage):
     trimesh sphere -> loaders cleanup -> binary STL on disk."""
@@ -83,6 +87,9 @@ def prepare_sphere3d(case_dir: Path) -> None:
 
     mesh = trimesh.creation.icosphere(subdivisions=3, radius=0.5)  # 1 m dia
     export_binary_stl(mesh, case_dir / "model.stl")
+
+
+_PREPARES[SPHERE3D["name"]] = prepare_sphere3d
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +195,7 @@ def main(argv=None) -> int:
         cdir = OUT / name
         cdir.mkdir(parents=True, exist_ok=True)
         (cdir / "case.json").write_text(json.dumps(case_dict, indent=2))
-        prepare = globals().get(f"prepare_{name}")
+        prepare = _PREPARES.get(name)
         if prepare:
             prepare(cdir)
         checker = globals()[checker_name]
