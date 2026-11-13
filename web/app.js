@@ -238,7 +238,8 @@ async function resultsScreen() {
   const name = state.current;
   $("res-title").textContent = name ? `Results — ${name}` : "Results";
   if (!name) return;
-  if (!state.viewer) { state.viewer = new Viewer($("viewer")); window.__viewer = state.viewer; }
+  if (!state.viewer) { state.viewer = new Viewer($("viewer")); window.__viewer = state.viewer;
+    state.viewer.onInfo = (s) => { $("cdnote").textContent = s; }; }
 
   // snapshots -> time selector (Q view rides the velocity snapshots)
   try {
@@ -310,9 +311,11 @@ $("btn-results").onclick = () => show("results");
 
 $("f-which").onchange = async () => {
   const w = $("f-which").value, q = w === "q", st = w === "stream";
-  for (const id of ["l-cmap", "l-wake", "l-size", "l-slice"])
+  for (const id of ["l-cmap", "l-wake", "l-slice"])
     $(id).classList.toggle("hidden", q);
-  $("l-thresh").classList.toggle("hidden", st); // threshold is a cloud/iso knob
+  $("l-size").classList.toggle("hidden", q || st); // streamlines: fixed width
+  // streamlines use the threshold slider only as the wake cut ("hide fast flow")
+  $("l-thresh").classList.toggle("hidden", st && !$("f-wake").checked);
   $("l-lines").classList.toggle("hidden", !st);
   if (q && +$("f-thresh").value < 20) $("f-thresh").value = 45;
   state.viewer?.setSettings({ field: w, thresh: $("f-thresh").value / 100,
@@ -337,6 +340,8 @@ $("f-thresh").oninput = () => {
 // wake mode: slider now means "% of incoming speed" - start somewhere useful
 $("f-wake").onchange = () => {
   if ($("f-wake").checked && +$("f-thresh").value < 20) $("f-thresh").value = 60;
+  if ($("f-which").value === "stream") // wake is the streamline threshold knob
+    $("l-thresh").classList.toggle("hidden", !$("f-wake").checked);
   state.viewer?.setSettings({ wake: $("f-wake").checked,
                               thresh: $("f-thresh").value / 100 });
   threshLabel();
@@ -349,8 +354,9 @@ function threshLabel() {
                                       : "vortex strength";
     return;
   }
+  const which = $("f-which").value;
   $("thresh-lab").textContent =
-    $("f-which").value !== "u" ? `hide calm (<${v}%)`
+    which !== "u" && which !== "stream" ? `hide calm (<${v}%)`
     : $("f-wake").checked ? `keep wake (<${v}% inflow)`
     : `hide slow (<${v}%)`;
 }

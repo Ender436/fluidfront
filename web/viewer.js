@@ -208,6 +208,12 @@ export class Viewer {
   }
 
   refresh() {
+    this._refreshNow();
+    // keep the status line in sync when a knob rebuilds the view in place
+    this.onInfo?.(this.frameInfo);
+  }
+
+  _refreshNow() {
     if (this.solid) this.solid.visible = this.settings.showSolid;
     if (this.settings.field === "q" && this.iso) {
       this.iso.isolation = this._isoLevel(); // threshold slider: re-polygonize
@@ -378,9 +384,13 @@ export class Viewer {
     this.linesRaw = null;
   }
 
-  // server already expanded each line into consecutive vertices (NaN marks a
-  // line break), so one segment per vertex pair; colored by |u| like the
-  // velocity cloud, threshold/slice/point-size sliders do not apply here
+  // steady streamlines from fluidfront/viz.py: expanded vertices per line,
+  // NaN marks a line break. Knobs: colormap; "hide fast flow" trims every
+  // line to the region the model slowed down (wake % is relative to the
+  // lines' median speed ~ inflow, and lines recolor across the wake, same
+  // idea as the point cloud); slice keeps the far half of the cut plane.
+  // Crossing segments are cut at the exact boundary (position + |u| lerp),
+  // so lines end cleanly on it. Point size does not apply (fixed width).
   _buildLines(fs) {
     this._disposeLines();
     this.linesRaw = fs;
@@ -389,26 +399,82 @@ export class Viewer {
       this.frameInfo = `t=${fs.t} · no flow in this frame`;
       return this.frameInfo;
     }
+    const s = this.settings;
     const dim = { nx: fs.dims[0], ny: fs.dims[1], nz: fs.dims[2] };
-    const { pts, mag, total } = fs;
+    const lines = []; // {x,y,z,m} in grid coords
+    for (let i = 0, cur = null; i < fs.total; i++) {
+      const x = fs.pts[i * 3];
+      if (Number.isNaN(x)) { cur = null; continue; }
+      if (!cur) lines.push(cur = { x: [], y: [], z: [], m: [] });
+      cur.x.push(x); cur.y.push(fs.pts[i * 3 + 1]);
+      cur.z.push(fs.pts[i * 3 + 2]); cur.m.push(fs.mag[i]);
+    }
+    // wake cut: median |u| along the lines (mostly freestream) ~ inflow
+    let cut = 0;
+    if (s.wake) {
+      const samp = [];
+      for (const r of lines)
+        for (let i = 0; i < r.m.length; i += 7) samp.push(r.m[i]);
+      samp.sort((a, b) => a - b);
+      cut = Math.max(1e-9, s.thresh * (samp[samp.length >> 1] || fs.vmax));
+    }
+    const axis = s.sliceAxis === "x" ? 0 : s.sliceAxis === "y" ? 1
+      : s.sliceAxis === "z" ? 2 : -1;
+    const scut = axis < 0 ? -1
+      : s.slicePos * (dim[["nx", "ny", "nz"][axis]] - 1);
+
+    // keep the part of run r where scalar(val(i)) is below/above B;
+    // straddling segments are split at the crossing point
+    const chop = (r, coord, above, B) => {
+      const val = coord < 0 ? (i) => r.m[i]
+        : (i) => (coord === 0 ? r.x : coord === 1 ? r.y : r.z)[i];
+      const out = [];
+      let X = [], Y = [], Z = [], M = [];
+      const flush = () => {
+        if (X.length > 1) out.push({ x: X, y: Y, z: Z, m: M });
+        X = []; Y = []; Z = []; M = [];
+      };
+      for (let i = 0; i < r.m.length; i++) {
+        const v = val(i), inw = above ? v >= B : v < B;
+        if (i > 0) {
+          const v0 = val(i - 1), was = above ? v0 >= B : v0 < B;
+          if (inw !== was) {
+            const f = (B - v0) / (v - v0);
+            const p = [0, 1, 2].map((k) =>
+              (k === 0 ? r.x : k === 1 ? r.y : r.z)[i - 1] +
+              f * ((k === 0 ? r.x : k === 1 ? r.y : r.z)[i] -
+                   (k === 0 ? r.x : k === 1 ? r.y : r.z)[i - 1]));
+            const im = r.m[i - 1] + f * (r.m[i] - r.m[i - 1]);
+            if (inw) { X = [p[0]]; Y = [p[1]]; Z = [p[2]]; M = [im]; }
+            else { X.push(p[0]); Y.push(p[1]); Z.push(p[2]); M.push(im); flush(); }
+          }
+        }
+        if (inw) { X.push(r.x[i]); Y.push(r.y[i]); Z.push(r.z[i]); M.push(r.m[i]); }
+      }
+      flush();
+      return out;
+    };
+
+    let runs = lines;
+    if (cut > 0) runs = runs.flatMap((r) => chop(r, -1, false, cut));
+    if (scut >= 0) runs = runs.flatMap((r) => chop(r, axis, true, scut));
+
+    const ref = cut > 0 ? cut : fs.vmax;
     const pos = [], col = [];
-    let px, py, pz, pm, have = false;
-    for (let i = 0; i < total; i++) {
-      const x = pts[i * 3];
-      if (Number.isNaN(x)) { have = false; continue; }
-      if (have) {
-        const a = this._pt(px, py, pz, dim), b = this._pt(x, pts[i * 3 + 1],
-                                                          pts[i * 3 + 2], dim);
-        const ca = ramp(this.settings.cmap, pm / fs.vmax);
-        const cb = ramp(this.settings.cmap, mag[i] / fs.vmax);
+    for (const r of runs) {
+      for (let i = 1; i < r.m.length; i++) {
+        const a = this._pt(r.x[i - 1], r.y[i - 1], r.z[i - 1], dim);
+        const b = this._pt(r.x[i], r.y[i], r.z[i], dim);
+        const ca = ramp(s.cmap, r.m[i - 1] / ref);
+        const cb = ramp(s.cmap, r.m[i] / ref);
         pos.push(a[0], a[1], a[2], b[0], b[1], b[2]);
         col.push(ca[0], ca[1], ca[2], cb[0], cb[1], cb[2]);
       }
-      px = x; py = pts[i * 3 + 1]; pz = pts[i * 3 + 2]; pm = mag[i];
-      have = true;
     }
     if (!pos.length) {
-      this.frameInfo = `t=${fs.t} · ${fs.n_lines} streamlines (blocked)`;
+      this.frameInfo = `t=${fs.t} · ${fs.n_lines} streamlines` +
+        (cut > 0 ? " (nothing in the wake - raise %)"
+                 : scut >= 0 ? " (nothing past the cut)" : " (blocked)");
       return this.frameInfo;
     }
     const g = new THREE.BufferGeometry();
@@ -418,7 +484,9 @@ export class Viewer {
     this.lines = new THREE.LineSegments(g, m);
     this.scene.add(this.lines);
     this._syncUnits();
-    this.frameInfo = `t=${fs.t} · ${fs.n_lines} streamlines`;
+    this.frameInfo = `t=${fs.t} · ${fs.n_lines} streamlines` +
+      (cut > 0 ? ` · wake <${Math.round(s.thresh * 100)}%` : "") +
+      (scut >= 0 ? ` · ${s.sliceAxis} cut ${Math.round(s.slicePos * 100)}%` : "");
     return this.frameInfo;
   }
 
