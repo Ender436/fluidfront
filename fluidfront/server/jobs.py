@@ -61,6 +61,7 @@ def _enqueue_event(q: asyncio.Queue, ev: dict) -> None:
 
 def device_info() -> dict:
     """GPU name + memory budget for quality-tier capping (nvidia-smi)."""
+    err = ""
     try:
         r = subprocess.run(
             ["nvidia-smi",
@@ -77,9 +78,18 @@ def device_info() -> dict:
                     # drivers cap single allocations (measured: 955 MB of 3822
                     # usable on RTX 3050 Ti laptop) -> conservative total/4
                     "maxbuf_mi": total * 0.25}
-    except Exception:  # noqa: BLE001 - any nvidia-smi hiccup -> conservative default
-        pass
-    return {"name": "unknown GPU (assuming 4 GB)", "total_mi": 4096.0,
+        err = (r.stderr or r.stdout or "").strip()
+    except Exception as e:  # noqa: BLE001 - any nvidia-smi hiccup -> conservative default
+        err = str(e)
+    # tell the user WHY the GPU went unknown: the classic after-driver-update
+    # NVML/kernel-module mismatch just needs a reboot, not a code fix
+    if "version mismatch" in err.lower():
+        hint = " - driver update pending, reboot to fix"
+    elif err:
+        hint = " - " + err.splitlines()[0][:60]
+    else:
+        hint = ""
+    return {"name": f"unknown GPU{hint} (assuming 4 GB)", "total_mi": 4096.0,
             "used_mi": 0.0, "free_mi": 4096.0, "source": "fallback",
             "maxbuf_mi": 1024.0}
 
