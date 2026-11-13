@@ -446,6 +446,113 @@ $("f-export").onclick = async () => {
   }
 };
 
+// ------------------------------------------------- one-page summary export -
+// A standalone HTML file (inline CSS + data-URL images): numbers, caveats,
+// the force chart, and a still of the view exactly as the user sees it.
+// Self-contained so anyone can open it without FluidFront running.
+$("f-summary").onclick = async () => {
+  const name = state.current;
+  if (!name || !state.viewer) return;
+  const btn = $("f-summary"), st = $("v-status");
+  btn.disabled = true;
+  try {
+    const [detail, f] = await Promise.all([
+      api(`/api/cases/${name}`), api(`/api/cases/${name}/forces`)]);
+    const stats = plot($("chart"), f); // same tail-mean math as the chart
+    const still = state.viewer.capture(1280, 720); // sync: see viewer.capture
+    const chart = $("chart").toDataURL("image/png");
+    const html = summaryHtml(name, detail, f, stats, still, chart);
+    window.__lastSummary = html; // debugging hook, mirrors window.__viewer
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    a.download = `${name}-summary.html`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    st.textContent = "summary saved";
+    setTimeout(() => { if (st.textContent === "summary saved") st.textContent = ""; }, 4000);
+  } catch (e) {
+    st.textContent = "summary failed: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+function tailMean(vals) { // mirror of plot.js Cd tail window (last third)
+  if (!vals || !vals.length) return null;
+  const seg = vals.slice(Math.floor(vals.length * 2 / 3));
+  return seg.reduce((a, b) => a + b, 0) / seg.length;
+}
+
+function summaryHtml(name, detail, f, stats, still, chart) {
+  const c = detail.case || {}, rep = detail.report || {};
+  const status = detail.status || {};
+  // kinematic viscosities kept in sync with fluidfront/gen/units.py FLUIDS
+  const NU = { air: 1.516e-5, water: 1.004e-6 };
+  const fluid = (c.fluid && c.fluid.kind) || "air";
+  const nu = NU[String(fluid).toLowerCase()] || NU.air;
+  const L = c.flow && c.flow.length_si, U = c.flow && c.flow.u_si;
+  const re = L && U ? (U * L / nu) : null;
+  const tail = stats && Number.isFinite(stats.cd_tail) ? stats.cd_tail : null;
+  const spread = stats && Number.isFinite(stats.cd_spread) ? stats.cd_spread : null;
+  const noisy = tail !== null && spread !== null &&
+    spread > 0.1 * Math.max(0.1, Math.abs(tail));
+  const cdTxt = tail === null ? "—"
+    : tail.toFixed(2) + (noisy ? ` ± ${spread.toFixed(2)}` : "");
+  const cl = tailMean(f.cl);
+  const cells = rep.cells || (c.domain && c.domain.nx * c.domain.ny * c.domain.nz);
+  const secs = status.started && status.updated
+    ? Math.round((Date.parse(status.updated) - Date.parse(status.started)) / 1000)
+    : null;
+  const facts = [
+    [esc(cdTxt), "Cd (last-third average" + (noisy ? ", oscillating wake" : "") + ")"],
+    [cl === null ? "—" : cl.toFixed(3), "Cl (last-third average)"],
+    [re === null ? "—" : re.toExponential(2).replace("e+", "e"), "Reynolds number"],
+    [L ? `${L.toFixed(2)} m at ${U.toFixed(1)} m/s` : "—", "model in flow"],
+    [cells ? cells.toLocaleString() : "—", "lattice cells"],
+    [rep.size_lu ? `${Math.round(rep.size_lu)} voxels across model` : "—", "resolution"],
+    [rep.blockage ? `${(rep.blockage * 100).toFixed(1)}%` : "—", "wind-tunnel blockage"],
+    [secs !== null ? `${Math.floor(secs / 60)}m ${secs % 60}s` : "—", "solve time"],
+    [status.mlups ? `${status.mlups} MLUPs` : "—", "solver speed"],
+  ];
+  const warns = (rep.warnings || []).concat(
+    noisy ? ["The wake was still oscillating when the run ended — this Cd is "
+             + "an average of a flaky flow; run longer or raise quality."] : []);
+  const rows = facts.map(([v, k]) =>
+    `<div class="f"><b>${v}</b><span>${k}</span></div>`).join("");
+  const warn = warns.length ? `<h3>Notes on accuracy</h3><ul>` +
+    warns.map(w => `<li>${esc(w)}</li>`).join("") + `</ul>` : "";
+  const date = new Date().toISOString().slice(0, 10);
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${esc(name)} — FluidFront results</title><style>
+body { font-family: system-ui, "Segoe UI", Roboto, sans-serif; margin: 0;
+  background: #f4f6f8; color: #1c222b; }
+main { max-width: 860px; margin: 24px auto; padding: 0 20px 40px; }
+h1 { font-size: 1.5rem; margin-bottom: 2px; } .sub { color: #5a6675; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px; margin: 18px 0; }
+.f { background: #fff; border: 1px solid #d5dbe3; border-radius: 10px;
+  padding: 10px 14px; } .f b { display: block; font-size: 1.25rem; }
+.f span { color: #5a6675; font-size: .85rem; }
+img { width: 100%; border: 1px solid #d5dbe3; border-radius: 10px;
+  margin: 8px 0; } ul { margin: 8px 0; } li { margin: 4px 0; color: #6b4a00; }
+footer { color: #5a6675; font-size: .85rem; margin-top: 24px; }
+</style></head><body><main>
+<h1>${esc(name)}</h1>
+<p class="sub">FluidFront CFD summary · ${date} · ${esc(String(c.fluid &&
+  c.fluid.kind || "air"))} · ${c.options && c.options.precision ?
+  c.options.precision : ""} solver</p>
+<div class="grid">${rows}</div>
+${warn}
+<h3>Flow at t=${esc(String(status.t != null ? status.t : ""))}</h3>
+<img src="${still}" alt="flow view">
+<h3>Force coefficients over time</h3>
+<img src="${chart}" alt="Cd/Cl chart">
+<footer>Cd/Cl measured on the voxelised body surface, referenced to its
+projected area and model length. Generated by FluidFront — Lattice-Boltzmann
+CFD (FluidX3D engine).</footer>
+</main></body></html>`;
+}
+
 initForm();
 connectWS();
 window.__viewer = null; // handy for debugging; set when created
