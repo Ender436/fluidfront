@@ -129,33 +129,6 @@
               <option value="stream">streamlines</option>
               <option value="rho">density</option>
             </select></label>
-          <label id="l-cmap">colormap
-            <select id="f-cmap">
-              <option value="turbo">turbo</option>
-              <option value="viridis">viridis</option>
-              <option value="gray">grayscale</option>
-            </select></label>
-          <label id="l-thresh"><span id="thresh-lab">hide slow</span>
-            <input type="range" id="f-thresh" min="0" max="90" value="5"></label>
-          <label id="l-slice" title="keep only a thin slab at the cut plane: velocity cloud shows the cells inside it, streamlines show just their stretch inside it (a cross-section of the flow)">slice
-            <select id="f-slice">
-              <option value="">off</option>
-              <option value="x">side cut</option>
-              <option value="y">cross cut</option>
-              <option value="z">flat cut</option>
-            </select>
-            <input type="range" id="f-slice-pos" min="0" max="100" value="50"
-                   title="slice position"></label>
-          <label id="l-wake" title="velocity/streamline view: keep only the flow the model slowed down (wake); the slider sets the % of incoming speed">hide fast flow
-            <input type="checkbox" id="f-wake"></label>
-          <label id="l-lines" class="hidden" title="streamlines seeded on the inlet plane; more lines = denser picture but slower to compute">lines
-            <select id="f-lines">
-              <option value="256">256</option>
-              <option value="1024" selected>1024</option>
-              <option value="4096">4096</option>
-            </select></label>
-          <label id="l-size">point size
-            <input type="range" id="f-size" min="1" max="10" value="3"></label>
           <label id="l-detail" title="view resolution only: how many points / how fine an eddy surface the browser draws; raise it to see more detail from high-resolution runs">view
             <select id="f-detail">
               <option value="fast">fast</option>
@@ -165,9 +138,47 @@
             </select></label>
           <label>model
             <input type="checkbox" id="f-solid" checked></label>
+          <span class="vspacer"></span>
           <label>time
             <select id="f-time"></select></label>
           <button id="f-refresh">↻</button>
+        </div>
+        <!-- styling knobs, grouped so related ones stay together; order is
+             fixed (colormap/cut · slice · density) so nothing jumps around -->
+        <div class="vctl">
+          <span class="vgrp" id="g-cut">
+            <label id="l-cmap">colormap
+              <select id="f-cmap">
+                <option value="turbo">turbo</option>
+                <option value="viridis">viridis</option>
+                <option value="gray">grayscale</option>
+              </select></label>
+            <label id="l-wake" title="velocity/streamline view: keep only the flow the model slowed down (wake); the slider next to it sets the % of incoming speed">hide fast flow
+              <input type="checkbox" id="f-wake"></label>
+            <label id="l-thresh"><span id="thresh-lab">hide slow</span>
+              <input type="range" id="f-thresh" min="0" max="90" value="5"></label>
+          </span>
+          <span class="vgrp" id="g-slice">
+            <label id="l-slice" title="keep only a thin slab at the cut plane: velocity cloud shows the cells inside it, streamlines show just their stretch inside it (a cross-section of the flow)">slice
+              <select id="f-slice">
+                <option value="">off</option>
+                <option value="x">side cut</option>
+                <option value="y">cross cut</option>
+                <option value="z">flat cut</option>
+              </select>
+              <input type="range" id="f-slice-pos" min="0" max="100" value="50"
+                     title="slice position"></label>
+          </span>
+          <span class="vgrp" id="g-density">
+            <label id="l-lines" class="hidden" title="streamlines seeded on the inlet plane; more lines = denser picture but slower to compute">lines
+              <select id="f-lines">
+                <option value="256">256</option>
+                <option value="1024" selected>1024</option>
+                <option value="4096">4096</option>
+              </select></label>
+            <label id="l-size">point size
+              <input type="range" id="f-size" min="1" max="10" value="3"></label>
+          </span>
         </div>
         <div class="vctl" title="renders the current view through every snapshot into a downloadable video">
           <label>video

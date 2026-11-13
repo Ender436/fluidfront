@@ -88,6 +88,10 @@ details summary { color: var(--mut); cursor: pointer; margin: 8px 0; }
 #viewer { width: 100%; height: 520px; }
 .vctl { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center;
   padding: 10px 14px; border-top: 1px solid var(--line); }
+.vgrp { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
+  border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px;
+  background: var(--panel); }
+.vspacer { margin-left: auto; }
 .vctl label { margin: 2px 0; font-size: .8rem; }
 .vctl input[type=range] { width: 90px; }
 #v-prog { display: none; width: 130px; height: 7px; border-radius: 4px;

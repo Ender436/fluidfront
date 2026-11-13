@@ -311,12 +311,16 @@ $("btn-results").onclick = () => show("results");
 
 $("f-which").onchange = async () => {
   const w = $("f-which").value, q = w === "q", st = w === "stream";
-  for (const id of ["l-cmap", "l-wake", "l-slice"])
-    $(id).classList.toggle("hidden", q);
+  $("l-cmap").classList.toggle("hidden", q); // Q surface: normals, no map
+  $("l-wake").classList.toggle("hidden", q || w === "rho"); // wake = u/stream
+  $("l-slice").classList.toggle("hidden", q);
   $("l-size").classList.toggle("hidden", q || st); // streamlines: fixed width
   // streamlines use the threshold slider only as the wake cut ("hide fast flow")
   $("l-thresh").classList.toggle("hidden", st && !$("f-wake").checked);
   $("l-lines").classList.toggle("hidden", !st);
+  // collapse emptied group boxes so no empty frame lingers
+  $("g-slice").classList.toggle("hidden", q);
+  $("g-density").classList.toggle("hidden", q);
   if (q && +$("f-thresh").value < 20) $("f-thresh").value = 45;
   state.viewer?.setSettings({ field: w, thresh: $("f-thresh").value / 100,
                               lines: +$("f-lines").value });
