@@ -388,7 +388,8 @@ export class Viewer {
   // NaN marks a line break. Knobs: colormap; "hide fast flow" trims every
   // line to the region the model slowed down (wake % is relative to the
   // lines' median speed ~ inflow, and lines recolor across the wake, same
-  // idea as the point cloud); slice keeps the far half of the cut plane.
+  // idea as the point cloud); slice keeps only the stretch of each line
+  // inside a thin slab at the cut plane (cross-section, not a half-space).
   // Crossing segments are cut at the exact boundary (position + |u| lerp),
   // so lines end cleanly on it. Point size does not apply (fixed width).
   _buildLines(fs) {
@@ -420,6 +421,9 @@ export class Viewer {
     }
     const axis = s.sliceAxis === "x" ? 0 : s.sliceAxis === "y" ? 1
       : s.sliceAxis === "z" ? 2 : -1;
+    // slab semantics matching the point cloud: keep only the part of each
+    // line inside a thin slab (+-1 cell) around the cut plane - the cut
+    // plane cross-sections the lines, it does not fence off a half-space
     const scut = axis < 0 ? -1
       : s.slicePos * (dim[["nx", "ny", "nz"][axis]] - 1);
 
@@ -457,7 +461,12 @@ export class Viewer {
 
     let runs = lines;
     if (cut > 0) runs = runs.flatMap((r) => chop(r, -1, false, cut));
-    if (scut >= 0) runs = runs.flatMap((r) => chop(r, axis, true, scut));
+    if (scut >= 0) { // band = keep above the near edge, below the far edge;
+      // +-1.5 cells (vs +-1 for the cloud): streamline steps are only 0.75
+      // cells, and a thinner slab leaves through-flow stubs invisible
+      runs = runs.flatMap((r) => chop(r, axis, true, scut - 1.5));
+      runs = runs.flatMap((r) => chop(r, axis, false, scut + 1.5));
+    }
 
     const ref = cut > 0 ? cut : fs.vmax;
     const pos = [], col = [];
@@ -474,7 +483,8 @@ export class Viewer {
     if (!pos.length) {
       this.frameInfo = `t=${fs.t} · ${fs.n_lines} streamlines` +
         (cut > 0 ? " (nothing in the wake - raise %)"
-                 : scut >= 0 ? " (nothing past the cut)" : " (blocked)");
+                 : scut >= 0 ? " (nothing at the cut - nudge the slider)"
+                             : " (blocked)");
       return this.frameInfo;
     }
     const g = new THREE.BufferGeometry();

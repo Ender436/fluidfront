@@ -461,16 +461,21 @@ testing work everywhere.
 - **2026-11-12 — streamlines x slice + wake knobs.** Stream mode now
   honors "hide fast flow" (wake cut: lines trimmed to |u| < %*median-line
   speed ~ inflow, recolored across the wake like the point cloud) and
-  slice (half-space: near side of the cut plane hidden, so you can look
-  into the flow around the model; point cloud keeps its thin-band
-  semantics). Crossing segments are split at the exact boundary (pos +
-  |u| lerp) so lines end cleanly on wake/slice edges. UI: wake/slice/
-  colormap visible in stream mode, threshold slider appears only as the
-  wake knob, point-size hidden (fixed line width); status line shows
-  "wake <N%"/"z cut N%" and hints when a combo leaves nothing. Viewer
-  gained onInfo callback so refresh()-only rebuilds keep #cdnote live
-  (also fixes stale status text for cloud knobs). Verified end-to-end in
-  the in-app browser on full_kart (WebGL OK): wake-only isolates the
-  kart's turbulent wake, z-cut-30% + wake renders trimmed correctly,
-  u-mode regression clean, no console errors.
+  slice (slab semantics matching the cloud: only each line's stretch
+  inside a thin slab at the cut plane is drawn - a flow cross-section).
+  User feedback on the first cut: a half-space "keep far side" clip read
+  as a wall sliding, not a slice; reworked to a +-1.5-cell band (chained
+  two-sided chops; 1.5 not 1 because streamline steps are 0.75 cells and
+  through-flow stubs were invisible). Crossing segments are split at the
+  exact boundary (pos + |u| lerp) so lines end cleanly on wake/slab
+  edges. UI: wake/slice/colormap visible in stream mode, threshold
+  slider appears only as the wake knob, point-size hidden (fixed line
+  width); status line shows "wake <N%"/"y cut N%" and hints when a combo
+  leaves nothing. Viewer gained onInfo callback so refresh()-only
+  rebuilds keep #cdnote live (also fixes stale status text for cloud
+  knobs). Verified end-to-end in the in-app browser on full_kart
+  (WebGL OK): wake-only isolates the kart's turbulent wake; y-slab at
+  60% shows the dashed cross-section with a green slow-wake patch,
+  slides over the model at 35%; wake+slab combo correct; u-mode
+  regression clean; no console errors.
 - **Next: M6d** results-report page/share. Queued: coarse-resolution Cd
