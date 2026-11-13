@@ -33,6 +33,9 @@ const DETAIL = {
   fast: { points: 100_000, solid: 500_000, qgrid: 64 },
   balanced: { points: 300_000, solid: 2_000_000, qgrid: 96 },
   sharp: { points: 1_000_000, solid: 4_000_000, qgrid: 128 },
+  // ultra: server serves stride-2 for huge grids (halved voxel size) and
+  // true 1:1 snapshots up to 12M cells; heavy on transfer + GPU, desktop-grade
+  ultra: { points: 12_000_000, solid: 12_000_000, qgrid: 160 },
 };
 
 async function getField(name, which, t, maxPoints) {
@@ -63,6 +66,21 @@ async function getQ(name, t, grid) {
            iso_lo: meta.iso_lo, iso_hi: meta.iso_hi };
 }
 
+async function getStreamlines(name, t, lines) {
+  const p = new URLSearchParams({ lines: String(lines || 1024) });
+  if (t !== null && t !== undefined) p.set("t", String(t));
+  const r = await fetch(`/api/cases/${name}/streamlines?${p}`);
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  const meta = JSON.parse(r.headers.get("X-Meta"));
+  const d = new Float32Array(await r.arrayBuffer());
+  const n = meta.total * 4;  // 3f position + 1f |u| per vertex
+  if (d.length < n) throw new Error("truncated streamlines response");
+  return { pts: d.subarray(0, meta.total * 3),
+           mag: d.subarray(meta.total * 3, n), total: meta.total,
+           n_lines: meta.n_lines, vmax: meta.vmax, t: meta.t,
+           dims: meta.dims };
+}
+
 export class Viewer {
   constructor(container) {
     this.box = container;
@@ -81,11 +99,14 @@ export class Viewer {
     this.points = null;
     this.solid = null;
     this.iso = null; // MarchingCubes vortex surface (field === "q")
+    this.lines = null; // streamlines (field === "stream")
+    this.linesRaw = null;
     this.qmeta = null; // {iso_lo, iso_hi} of the loaded Q grid
     this.stamp = null; // server setup fingerprint of the loaded solid
     this.settings = { field: "u", cmap: "turbo", thresh: 0.05,
                       pointSize: 3, showSolid: true, wake: false,
-                      sliceAxis: "", slicePos: 0.5, detail: "balanced" };
+                      sliceAxis: "", slicePos: 0.5, detail: "balanced",
+                      lines: 1024 };
     this._raf = null;
     this._resize();
     new ResizeObserver(() => this._resize()).observe(container);
@@ -107,7 +128,7 @@ export class Viewer {
   }
 
   _clearMeshes() {
-    for (const obj of [this.points, this.solid, this.iso]) {
+    for (const obj of [this.points, this.solid, this.iso, this.lines]) {
       if (!obj) continue;
       this.scene.remove(obj);
       obj.geometry.dispose();
@@ -142,20 +163,30 @@ export class Viewer {
     const budget = DETAIL[this.settings.detail] || DETAIL.balanced;
     if (this.settings.showSolid) await this.ensureSolid();
     if (this.settings.field === "q") {
-      if (this.points) { // Q mode: drop the point cloud
-        this.scene.remove(this.points);
-        this.points.geometry.dispose();
-        this.points.material.dispose();
-        this.points = null;
-      }
+      this._dropPoints(); // Q mode: drop the point cloud
       const fq = await getQ(name, t, budget.qgrid);
       return this._buildIso(fq);
     }
+    if (this.settings.field === "stream") {
+      this._dropPoints();
+      this._disposeIso();
+      const fs = await getStreamlines(name, t, this.settings.lines);
+      return this._buildLines(fs);
+    }
     this._disposeIso();
+    this._disposeLines();
     const f = await getField(name, this.settings.field, t, budget.points);
     this._buildPoints(f);
     this.frameInfo = `t=${f.t} · ${f.dims.join("×")}`;
     return this.frameInfo;
+  }
+
+  _dropPoints() {
+    if (!this.points) return;
+    this.scene.remove(this.points);
+    this.points.geometry.dispose();
+    this.points.material.dispose();
+    this.points = null;
   }
 
   // Fetch (or rebuild) the model solid if it is missing or the case was
@@ -181,6 +212,10 @@ export class Viewer {
     if (this.settings.field === "q" && this.iso) {
       this.iso.isolation = this._isoLevel(); // threshold slider: re-polygonize
       this.iso.update();                     // (no refetch)
+      return;
+    }
+    if (this.settings.field === "stream") {
+      if (this.linesRaw) this._buildLines(this.linesRaw); // recolor only
       return;
     }
     if (this.raw) this._buildPoints(this.raw); // recolor with new settings
@@ -334,6 +369,59 @@ export class Viewer {
     this.iso = null;
   }
 
+  _disposeLines() {
+    if (!this.lines) return;
+    this.scene.remove(this.lines);
+    this.lines.geometry.dispose();
+    this.lines.material.dispose();
+    this.lines = null;
+    this.linesRaw = null;
+  }
+
+  // server already expanded each line into consecutive vertices (NaN marks a
+  // line break), so one segment per vertex pair; colored by |u| like the
+  // velocity cloud, threshold/slice/point-size sliders do not apply here
+  _buildLines(fs) {
+    this._disposeLines();
+    this.linesRaw = fs;
+    this.streamDims = fs.dims;
+    if (!(fs.vmax > 0)) {
+      this.frameInfo = `t=${fs.t} · no flow in this frame`;
+      return this.frameInfo;
+    }
+    const dim = { nx: fs.dims[0], ny: fs.dims[1], nz: fs.dims[2] };
+    const { pts, mag, total } = fs;
+    const pos = [], col = [];
+    let px, py, pz, pm, have = false;
+    for (let i = 0; i < total; i++) {
+      const x = pts[i * 3];
+      if (Number.isNaN(x)) { have = false; continue; }
+      if (have) {
+        const a = this._pt(px, py, pz, dim), b = this._pt(x, pts[i * 3 + 1],
+                                                          pts[i * 3 + 2], dim);
+        const ca = ramp(this.settings.cmap, pm / fs.vmax);
+        const cb = ramp(this.settings.cmap, mag[i] / fs.vmax);
+        pos.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+        col.push(ca[0], ca[1], ca[2], cb[0], cb[1], cb[2]);
+      }
+      px = x; py = pts[i * 3 + 1]; pz = pts[i * 3 + 2]; pm = mag[i];
+      have = true;
+    }
+    if (!pos.length) {
+      this.frameInfo = `t=${fs.t} · ${fs.n_lines} streamlines (blocked)`;
+      return this.frameInfo;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    const m = new THREE.LineBasicMaterial({ vertexColors: true });
+    this.lines = new THREE.LineSegments(g, m);
+    this.scene.add(this.lines);
+    this._syncUnits();
+    this.frameInfo = `t=${fs.t} · ${fs.n_lines} streamlines`;
+    return this.frameInfo;
+  }
+
   // Q-criterion iso-surface from the server's uniform Q grid (see
   // fluidfront/qcriterion.py). MarchingCubes' field layout (x fastest, then
   // y, z) matches the server array exactly, so we can bulk-load it.
@@ -348,8 +436,8 @@ export class Viewer {
     const N = fq.dims[0];
     const mc = new MarchingCubes(N,
       new THREE.MeshNormalMaterial({ side: THREE.DoubleSide }),
-      false, false, 40000); // constructor calls init(N) itself - do not re-init
-    mc.field.set(fq.q);
+      false, false, N > 128 ? 100000 : 40000); // vertex budget; constructor
+    mc.field.set(fq.q);                        // calls init(N) itself - no re-init
     mc.isolation = this._isoLevel();
     mc.update();
     // engine axes -> three.js (same cyclic map as _pt): local x->world z,
@@ -377,7 +465,7 @@ export class Viewer {
 
   _syncUnits() {
     // aim at the model (engine center: x=0.5·nx, y≈0.33·ny, z=0.5·nz)
-    const dims = this.raw?.dims || this.isoDims;
+    const dims = this.raw?.dims || this.isoDims || this.streamDims;
     if (dims) {
       const [nx, ny, nz] = dims, s = Math.max(nx, ny, nz);
       this.controls.target.set(0.33 * ny / s, 0.5 * nz / s, 0.5 * nx / s);

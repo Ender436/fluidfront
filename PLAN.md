@@ -435,4 +435,27 @@ testing work everywhere.
   Added TestExportAPI (static revalidation headers, frame POST round-trip
   -> gif size -> begin clears previous video, finish <2 frames 400);
   starlette 1.x TestClient needs the `httpx2` dev extra. 25 tests green.
+- **2026-11-12 — M6e high-fidelity views: `ultra` tier + streamlines.**
+  User wanted more visible detail than `sharp` (25M-cell full_kart was
+  being drawn at 1M points, stride-3). Did both options asked about:
+  (1) new `ultra` view tier - budgets 12M points/solid, qgrid 160; server
+  clamps raised (field max_points 4M -> 12M, /q grid 128 -> 192), so big
+  grids drop to stride-2 (halved voxel size, ~3.1M pts / 37MB) and runs up
+  to 12M cells serve true 1:1; MarchingCubes vertex budget 100k when
+  N > 128. (2) New steady-flow streamlines mode (`fluidfront/viz.py`):
+  integral curves of the direction field, all seeds marched lockstep RK2
+  along normalized u (0.75-cell steps), seeded on a k x k grid over the
+  inlet plane y=1, stopped at solid (flags & 65), domain edge, or
+  stagnation; output is float32 pts+|u| with one NaN vertex per line
+  break. Endpoint GET /api/cases/{name}/streamlines?t&lines (16..4096,
+  u+flags read at max_points=2M so integration runs on stride-2). Viewer
+  draws THREE.LineSegments colored by the |u| ramp; threshold/slice/
+  point-size knobs hidden in stream mode; line-count selector 256/1024/
+  4096; capture/export works there unchanged. Streamlines are geometric
+  (steady field), no time accuracy. Tests: analytic ground truth
+  (uniform = straight full-length lines, slab blocks+deflects, stagnation
+  = single points, shape mismatch raises, no-flags integrates freely) +
+  API 404/404/meta round-trip - 33 green. Real-data curl: streamlines
+  1024 lines -> 346k verts/5.5MB/2.2s; ultra field 37MB/1.1s; q@160
+  16MB/2.0s.
 - **Next: M6d** results-report page/share. Queued: coarse-resolution Cd

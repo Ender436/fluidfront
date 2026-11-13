@@ -28,6 +28,7 @@ from ..gen.schema import load_case
 from ..gen.units import CaseError
 from ..geometry.loaders import GeometryError
 from ..geometry.pipeline import build_tunnel_case
+from ..viz import streamlines as trace_streamlines
 from .jobs import (CASES, BusyError, JobManager, NotFound, case_dir,
                    device_info, estimated_seconds, read_field, read_forces,
                    read_q, snapshots)
@@ -253,7 +254,7 @@ def field(name: str, which: str = "u", t: int | None = None,
           max_points: int = 200_000, fmt: str = "json"):
     try:
         arr, meta = read_field(name, which, t,
-                               max_points=max(1, min(max_points, 4_000_000)))
+                               max_points=max(1, min(max_points, 12_000_000)))
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:  # snapshot still being written / corrupt
@@ -267,6 +268,33 @@ def field(name: str, which: str = "u", t: int | None = None,
                         media_type="application/octet-stream",
                         headers={"X-Meta": json.dumps(info)})
     return {**info, "data_b64": base64.b64encode(arr.tobytes()).decode()}
+
+
+@app.get("/api/cases/{name}/streamlines")
+def streamlines_ep(name: str, t: int | None = None,
+                   lines: int = 1024) -> Response:
+    """Steady-flow streamlines seeded on the inlet plane of the latest u
+    snapshot (see fluidfront.viz). Binary body: pts (3f32/vertex, NaN line
+    separators) followed by per-vertex |u|; counts in X-Meta."""
+    try:
+        case_dir(name)
+        u, meta = read_field(name, "u", t, max_points=2_000_000)
+        try:
+            fl, _ = read_field(name, "flags", t, max_points=2_000_000)
+        except NotFound:
+            fl = None  # no flags snapshot: integrate freely (rare, early run)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:  # snapshot still being written / corrupt
+        raise HTTPException(status_code=503,
+                            detail=f"snapshot not readable yet: {e}")
+    res = trace_streamlines(u, fl, n_lines=max(16, min(4096, lines)))
+    info = {"n_lines": res["n_lines"], "total": res["total"],
+            "t": meta[4], "vmax": res["vmax"], "dims": meta[:3],
+            "dtype": "float32-le"}
+    return Response(content=res["pts"].tobytes() + res["mag"].tobytes(),
+                    media_type="application/octet-stream",
+                    headers={"X-Meta": json.dumps(info)})
 
 
 @app.get("/api/cases/{name}/stamp")
@@ -286,7 +314,7 @@ def q_field(name: str, t: int | None = None, grid: int = 96,
     """Q-criterion vortex grid (uniform cube, physical 1/s^2) for the
     iso-surface view. iso_lo/iso_hi bracket the slider's iso-level range."""
     try:
-        res, t_actual = read_q(name, t, grid=max(32, min(128, grid)))
+        res, t_actual = read_q(name, t, grid=max(32, min(192, grid)))
     except NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:  # snapshot still being written / corrupt

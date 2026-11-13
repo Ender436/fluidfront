@@ -309,18 +309,26 @@ $("btn-stop").onclick = async () => {
 $("btn-results").onclick = () => show("results");
 
 $("f-which").onchange = async () => {
-  const q = $("f-which").value === "q";
+  const w = $("f-which").value, q = w === "q", st = w === "stream";
   for (const id of ["l-cmap", "l-wake", "l-size", "l-slice"])
     $(id).classList.toggle("hidden", q);
+  $("l-thresh").classList.toggle("hidden", st); // threshold is a cloud/iso knob
+  $("l-lines").classList.toggle("hidden", !st);
   if (q && +$("f-thresh").value < 20) $("f-thresh").value = 45;
-  state.viewer?.setSettings({ field: $("f-which").value,
-                              thresh: $("f-thresh").value / 100 });
+  state.viewer?.setSettings({ field: w, thresh: $("f-thresh").value / 100,
+                              lines: +$("f-lines").value });
   threshLabel();
   const snaps = (state.snapSel[state.current] || {})[snapKey()] || [];
   $("f-time").innerHTML = snaps.map(t => `<option value="${t}">${t}</option>`).reverse().join("");
   loadFrame();
 };
-const snapKey = () => $("f-which").value === "q" ? "u" : $("f-which").value;
+// streamline seeds live on the u snapshots; rho/flags have their own lists
+const snapKey = () => ["q", "stream"].includes($("f-which").value) ? "u"
+  : $("f-which").value;
+$("f-lines").onchange = () => {
+  state.viewer?.setSettings({ lines: +$("f-lines").value });
+  loadFrame(); // line count changes server-side seeding => refetch
+};
 $("f-cmap").onchange = () => state.viewer?.setSettings({ cmap: $("f-cmap").value });
 $("f-thresh").oninput = () => {
   state.viewer?.setSettings({ thresh: $("f-thresh").value / 100 });
