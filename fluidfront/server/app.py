@@ -92,6 +92,7 @@ async def create_case(
     name: str = Form(""),
     u_si: float = Form(...),                 # flow speed, m/s
     tier: str = Form("standard"),            # preview | standard | detailed
+    duration: str = Form("standard"),        # quick | standard | long
     fluid: str = Form("air"),
     rotation_deg: str = Form("90,0,0"),      # STL Z-up -> tunnel +y default
     size_lu: int = Form(0),                  # >0 overrides quality tier
@@ -105,6 +106,10 @@ async def create_case(
     if tier not in ("preview", "standard", "detailed"):
         raise HTTPException(status_code=422,
                             detail=f"tier {tier!r} not in preview/standard/detailed")
+    throughs = {"quick": 2.0, "standard": 4.0, "long": 8.0}.get(duration)
+    if throughs is None:
+        raise HTTPException(status_code=422,
+                            detail=f"duration {duration!r} not in quick/standard/long")
     if precision not in ("fp32", "fp16s", "fp16c"):
         raise HTTPException(status_code=422,
                             detail=f"precision {precision!r} not in fp32/fp16s/fp16c")
@@ -148,7 +153,7 @@ async def create_case(
         case, report = build_tunnel_case(
             upload, cdir, u_si=u_si, tier=tier, fluid=fluid, rotation_deg=rot,
             size_lu=size_lu or None, max_cells=max_cells,
-            scale_si=scale_si, precision=precision)
+            scale_si=scale_si, precision=precision, throughs=throughs)
         (cdir / "case.json").write_text(json.dumps(case, indent=2))
         spec = load_case(cdir)  # guard rails fire here (tau, u_lu, ...)
     except (GeometryError, CaseError, ValueError) as e:
@@ -165,7 +170,8 @@ async def create_case(
            "domain": report["layout"].as_domain(),
            "size_lu": report["layout"].size_lu,
            "cells": report["layout"].nx * report["layout"].ny * report["layout"].nz,
-           "t_steps": case["run"]["t_steps"]}
+           "t_steps": case["run"]["t_steps"],
+           "frames": report["frames"]}
     rep["estimate_s"] = estimated_seconds(rep["cells"], rep["t_steps"], dev,
                                           subgrid=spec.subgrid)
     (cdir / "report.json").write_text(json.dumps(rep, indent=2))

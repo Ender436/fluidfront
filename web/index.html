@@ -71,6 +71,17 @@
         <label class="tier"><input type="radio" name="tier" value="detailed">
           <b>Detailed</b><small>slowest · sharpest wake</small></label>
       </fieldset>
+      <fieldset><legend>Simulate</legend>
+        <label class="tier" title="how many times the tunnel's air gets fully replaced during the run — longer lets the wake develop further and gives the video more frames"
+          ><input type="radio" name="duration" value="quick">
+          <b>Quick</b><small>2 tunnel lengths · shortest</small></label>
+        <label class="tier" title="how many times the tunnel's air gets fully replaced during the run — longer lets the wake develop further and gives the video more frames"
+          ><input type="radio" name="duration" value="standard" checked>
+          <b>Standard</b><small>4 tunnel lengths (recommended)</small></label>
+        <label class="tier" title="how many times the tunnel's air gets fully replaced during the run — longer lets the wake develop further and gives the video more frames"
+          ><input type="radio" name="duration" value="long">
+          <b>Long</b><small>8 tunnel lengths · most frames</small></label>
+      </fieldset>
       <details><summary>Advanced (usually leave alone)</summary>
         <div class="grid3">
           <label>Rotation X° <input type="number" id="rx" value="90" step="15"></label>

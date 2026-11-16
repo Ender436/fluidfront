@@ -33,7 +33,8 @@ def build_tunnel_case(model_path: Path | str, case_dir: Path | str, *,
                       size_lu: int | None = None,
                       max_cells: int | None = None,
                       scale_si: float = 1.0,
-                      precision: str = "fp16s") -> tuple[dict, dict]:
+                      precision: str = "fp16s",
+                      throughs: float = 4.0) -> tuple[dict, dict]:
     """Returns (case_dict, report). Writes `<case_dir>/model.stl`.
     size_lu: explicit voxels on the model's longest edge (overrides tier).
     scale_si: meters per model unit (CAD exports are often mm/cm - the
@@ -72,11 +73,22 @@ def build_tunnel_case(model_path: Path | str, case_dir: Path | str, *,
 
     ny = lay.ny
     u_lu = 0.1
-    t_steps = int(round(4.0 * ny / u_lu / 500.0) * 500)  # ~4 flow-throughs
+    t_steps = int(round(throughs * ny / u_lu / 500.0) * 500)  # `throughs` passes
     force_every = min(50, max(10, t_steps // 400))
+    # field snapshots double as the video/timeline frames, so their count is
+    # visible to users: aim for one per quarter flow-through (8..32 total),
+    # but cap disk use - each snapshot VTK stores u (3f) + rho (f) ~16 B/cell
+    cells = lay.nx * lay.ny * lay.nz
+    want_snap = max(8, min(4 * round(throughs), 32))
+    disk_snap = max(8, int(6e9 // max(1, cells * 16)))
+    n_snap = min(want_snap, disk_snap)
+    if n_snap < want_snap:
+        warnings.append(
+            f"big grid: timeline/video frames capped at {n_snap} to keep "
+            f"snapshot files under ~{n_snap * cells * 16 / 1e9:.0f} GB")
     # snapshots must land on force-write steps (t is only ever a multiple of
     # force_every) or the engine never writes a field snapshot
-    snapshot_every = max(1000, t_steps // 8)
+    snapshot_every = max(100, t_steps // n_snap)
     snapshot_every = -(-snapshot_every // force_every) * force_every
 
     case = {
@@ -97,5 +109,8 @@ def build_tunnel_case(model_path: Path | str, case_dir: Path | str, *,
                 "snapshot_every": snapshot_every, "write_rho": True},
     }
     report = {"warnings": warnings, "stats": insp["stats"], "layout": lay,
-              "blockage": lay.blockage}
+              "blockage": lay.blockage,
+              # actual timeline/video frame count (engine also writes the
+              # final step, so a remainder adds one more)
+              "frames": t_steps // snapshot_every + bool(t_steps % snapshot_every)}
     return case, report

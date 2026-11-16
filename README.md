@@ -10,7 +10,12 @@ the flow. No meshing, no config files, no CFD expertise.
 - **License:** our code MIT; the engine keeps FluidX3D's non-commercial
   terms → the combined app must stay non-commercial.
 
-See **PLAN.md** for the full plan, milestones, and execution constraints.
+## Easiest start
+
+Double-click **`start.bat`** (Windows) or run **`./start.sh`** (Linux/macOS)
+in this folder. First run creates the Python environment and fetches the
+solver engine automatically; after that it just starts the server — then
+open **http://localhost:8123**.
 
 ## Quick start (development, on any machine with a GPU)
 

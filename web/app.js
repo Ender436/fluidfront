@@ -141,6 +141,7 @@ function initForm() {
     fd.append("model", chosenFile);
     fd.append("u_si", $("u_si").value);
     fd.append("tier", document.querySelector("input[name=tier]:checked").value);
+    fd.append("duration", document.querySelector("input[name=duration]:checked").value);
     fd.append("fluid", $("fluid").value);
     fd.append("rotation_deg", `${$("rx").value},${$("ry").value},${$("rz").value}`);
     fd.append("size_lu", $("size_lu").value || "0");
@@ -183,6 +184,7 @@ function showReport(res) {
     [`${(rep.blockage * 100).toFixed(1)} %`, "tunnel blockage"],
     [d.tau.toFixed(3), "solver stability (tau)"],
     [`≈ ${fmtTime(rep.estimate_s)}`, "estimated run time"],
+    [rep.frames, "timeline & video frames"],
   ]);
   const warns = [...(d.warnings || []), ...(rep.warnings || [])];
   $("rpt-warns").innerHTML = warns.map(w => `<li>${esc(w)}</li>`).join("");
