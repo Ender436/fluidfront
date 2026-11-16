@@ -459,9 +459,46 @@ $("f-summary").onclick = async () => {
     const [detail, f] = await Promise.all([
       api(`/api/cases/${name}`), api(`/api/cases/${name}/forces`)]);
     const stats = plot($("chart"), f); // same tail-mean math as the chart
+    // the still reads much better with "hide fast flow" on (a dense cloud
+    // otherwise hides the flow structure around the model), so the summary
+    // turns it on just for the capture, then restores the live view
+    const which = $("f-which").value;
+    const wakeApplies = which === "u" || which === "stream";
+    let forceWake = !$("f-wake").checked && wakeApplies;
+    const wakeShot = wakeApplies && ($("f-wake").checked || forceWake);
+    if (forceWake) {
+      // mirror the wake toggle's own threshold logic: slider <20 is a
+      // "hide slow" value, meaningless as a wake cut -> use 60%
+      const th = +$("f-thresh").value / 100;
+      state.viewer.setSettings({ wake: true, thresh: th < 0.2 ? 0.6 : th });
+      if (/\(nothing/.test(state.viewer.frameInfo || "")) {
+        // e.g. slice combo leaves an empty frame - capture as-is instead
+        state.viewer.setSettings({ wake: false, thresh: +$("f-thresh").value / 100 });
+        forceWake = false;
+      }
+    }
+    // the default camera fit centers on the model, which leaves the still
+    // with a small body and a lot of blank upstream sky; nudge the aim a
+    // little downstream (flow runs along +x) and dolly in so the model and
+    // its wake fill the frame. Restored exactly after the shot.
+    let cam0 = null;
+    if (wakeShot) {
+      const t0 = state.viewer.controls.target, p0 = state.viewer.camera.position;
+      cam0 = { t: t0.clone(), p: p0.clone() };
+      const t1 = t0.clone();
+      t1.x += 0.06;
+      state.viewer.controls.target.copy(t1);
+      p0.copy(t1.clone().add(cam0.p.clone().sub(cam0.t).multiplyScalar(0.85)));
+    }
     const still = state.viewer.capture(1280, 720); // sync: see viewer.capture
+    if (cam0) {
+      state.viewer.controls.target.copy(cam0.t);
+      state.viewer.camera.position.copy(cam0.p);
+    }
+    if (forceWake)
+      state.viewer.setSettings({ wake: false, thresh: +$("f-thresh").value / 100 });
     const chart = $("chart").toDataURL("image/png");
-    const html = summaryHtml(name, detail, f, stats, still, chart);
+    const html = summaryHtml(name, detail, f, stats, still, chart, wakeShot);
     window.__lastSummary = html; // debugging hook, mirrors window.__viewer
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
@@ -483,7 +520,7 @@ function tailMean(vals) { // mirror of plot.js Cd tail window (last third)
   return seg.reduce((a, b) => a + b, 0) / seg.length;
 }
 
-function summaryHtml(name, detail, f, stats, still, chart) {
+function summaryHtml(name, detail, f, stats, still, chart, wakeShot) {
   const c = detail.case || {}, rep = detail.report || {};
   const status = detail.status || {};
   // kinematic viscosities kept in sync with fluidfront/gen/units.py FLUIDS
@@ -543,7 +580,8 @@ footer { color: #5a6675; font-size: .85rem; margin-top: 24px; }
   c.options.precision : ""} solver</p>
 <div class="grid">${rows}</div>
 ${warn}
-<h3>Flow at t=${esc(String(status.t != null ? status.t : ""))}</h3>
+<h3>Flow at t=${esc(String(status.t != null ? status.t : ""))}${wakeShot ?
+  " · fast flow hidden, so the wake is visible" : ""}</h3>
 <img src="${still}" alt="flow view">
 <h3>Force coefficients over time</h3>
 <img src="${chart}" alt="Cd/Cl chart">
